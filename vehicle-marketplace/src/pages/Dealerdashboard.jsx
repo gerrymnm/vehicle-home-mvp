@@ -99,6 +99,16 @@ export default function Dealerdashboard() {
     }
   }
 
+  async function unmarkSold(vin) {
+    try {
+      // toggle back to in stock via PATCH
+      await http.patch(`/api/vehicles/${encodeURIComponent(vin)}`, { inStock: true });
+      await load();
+    } catch {
+      alert("Failed to unmark sold");
+    }
+  }
+
   /* ---------------- CSV import ---------------- */
   function parseCsv(file) {
     setCsvPreview([]);
@@ -228,17 +238,21 @@ export default function Dealerdashboard() {
                 </td>
                 <td style={{ textAlign: "center" }}>{v.inStock ? "In stock" : "Sold"}</td>
                 <td style={{ textAlign: "center" }}>
-                  {editing === v.vin ? (
-                    <>
-                      <button onClick={() => saveEdit(v.vin)}>Save</button>
-                      <button onClick={cancelEdit} style={{ marginLeft: 6 }}>Cancel</button>
-                    </>
+                  {v.inStock ? (
+                    editing === v.vin ? (
+                      <>
+                        <button onClick={() => saveEdit(v.vin)}>Save</button>
+                        <button onClick={cancelEdit} style={{ marginLeft: 6 }}>Cancel</button>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={() => beginEdit(v)}>Edit</button>
+                        <button onClick={() => markSold(v.vin)} style={{ marginLeft: 6 }}>Mark sold</button>
+                      </>
+                    )
                   ) : (
                     <>
-                      {v.inStock && <button onClick={() => beginEdit(v)}>Edit</button>}
-                      {v.inStock
-                        ? <button onClick={() => markSold(v.vin)} style={{ marginLeft: 6 }}>Mark sold</button>
-                        : <span style={{ opacity: .6, marginLeft: 6 }}>—</span>}
+                      <button onClick={() => unmarkSold(v.vin)}>Unmark sold</button>
                     </>
                   )}
                 </td>
