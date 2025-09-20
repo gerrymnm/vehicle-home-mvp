@@ -6,7 +6,7 @@ import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Search from "./pages/Search";
-import Vehicledetails from "./pages/VehicleDetails";     // file is Vehicledetails.jsx
+import Vehicledetails from "./pages/Vehicledetails";     // file is Vehicledetails.jsx
 import Dealerdashboard from "./pages/Dealerdashboard";   // file is Dealerdashboard.jsx
 
 import { useAuth, RequireAuth } from "./lib/auth.jsx";
