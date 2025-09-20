@@ -1,11 +1,14 @@
 import React from "react";
 import { Routes, Route, Link, useNavigate } from "react-router-dom";
-import Home from "./pages/Home.jsx";
-import Login from "./pages/Login.jsx";
-import Register from "./pages/Register.jsx";
-import Search from "./pages/Search.jsx";
-import VehicleDetails from "./pages/VehicleDetails.jsx";
-import DealerDashboard from "./pages/DealerDashboard.jsx";
+
+// NOTE: no extensions here; Vite resolves .jsx/.js either way.
+import Home from "./pages/Home";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import Search from "./pages/Search";
+import VehicleDetails from "./pages/VehicleDetails";
+import DealerDashboard from "./pages/DealerDashboard";
+
 import { useAuth, RequireAuth } from "./lib/auth.jsx";
 
 function Nav() {
