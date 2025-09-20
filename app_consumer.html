@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Vehicle Home</title>
+<style>
+  :root{
+    --bg:#fff; --fg:#0f172a; --muted:#64748b; --line:#e2e8f0;
+    --pill:#f1f5f9; --accent:#111827; --brand:#111827; --ok:#10b981; --warn:#f59e0b; --bad:#ef4444;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial}
+  header{padding:16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  h1{margin:0;font-size:20px}
+  .tagline{color:var(--muted);font-size:12px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .pill{background:var(--pill);border-radius:999px;padding:4px 10px;font-size:12px}
+  main{padding:16px;max-width:1060px;margin:0 auto}
+  input,select,textarea,button{font-size:14px;padding:10px;border:1px solid var(--line);border-radius:10px;background:#fff}
+  button{background:var(--brand);color:#fff;cursor:pointer;border:0}
+  button.ghost{background:#fff;color:var(--brand);border:1px solid var(--line)}
+  .card{border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}
+  .grid{display:grid;gap:10px;grid-template-columns:repeat(12,1fr)}
+  .col-12{grid-column:span 12}.col-6{grid-column:span 6}.col-4{grid-column:span 4}.col-3{grid-column:span 3}
+  .muted{color:var(--muted)}
+  .title{font-weight:600}
+  .sub{color:var(--muted);font-size:13px}
+  .event-badge{display:inline-flex;align-items:center;gap:6px;background:#eef2ff;border:1px solid #e0e7ff;color:#3730a3;padding:3px 8px;border-radius:999px;font-size:12px}
+  .event-badge.sold{background:#fee2e2;border-color:#fecaca;color:#991b1b}
+  .event-badge.price_change{background:#dcfce7;border-color:#bbf7d0;color:#065f46}
+  .event-badge.recondition{background:#fff7ed;border-color:#ffedd5;color:#9a3412}
+  .status-secured{display:inline-flex;align-items:center;gap:6px;color:var(--ok);font-size:12px}
+  .photos{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .photos img{max-height:120px;border-radius:10px}
+  .toast{position:fixed;right:16px;bottom:16px;background:#111827;color:#fff;padding:10px 14px;border-radius:10px;box-shadow:0 6px 24px rgb(0 0 0/25%);font-size:13px;display:none}
+  .help {font-size:12px;color:var(--muted)}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap}
+  .divider{height:1px;background:var(--line);margin:10px 0}
+  @media (max-width:820px){.col-6,.col-4,.col-3{grid-column:span 12}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Vehicle Home</h1>
+  <span class="tagline">Vehicle history <b>secured on the blockchain</b></span>
+  <div class="pill">Mobile-ready</div>
+</header>
+
+<main>
+  <!-- Search -->
+  <div class="card">
+    <div class="grid">
+      <div class="col-6">
+        <label class="muted">VIN</label>
+        <input id="vin" value="5J6TF3H33CL003984" placeholder="Enter VIN"/>
+      </div>
+      <div class="col-6" style="display:flex;align-items:flex-end;gap:8px">
+        <button id="load">Load History</button>
+        <button id="clear" class="ghost">Clear</button>
+
+        <!-- Role selector for demo/operators (no blockchain jargon) -->
+        <select id="role" title="Role" class="ghost">
+          <option value="guest">Guest (read-only)</option>
+          <option value="owner">Owner</option>
+          <option value="dealer">Dealer</option>
+          <option value="auction">Auction</option>
+          <option value="bank">Bank</option>
+          <option value="insurer">Insurer</option>
+          <option value="dmv">DMV</option>
+        </select>
+      </div>
+    </div>
+    <div class="help" style="margin-top:6px">
+      Tip: choose your role to see exactly what that user would see. Private details are automatically hidden for non-owners.
+    </div>
+  </div>
+
+  <!-- Role actions (no mention of blockchain; just “Add event”) -->
+  <div id="panel-actions" class="card" hidden>
+    <div class="title">Add event</div>
+    <div class="grid" style="margin-top:8px">
+      <div class="col-3">
+        <label class="muted">Event</label>
+        <select id="event">
+          <option value="listed_for_sale">Listed for sale</option>
+          <option value="inspection">Inspection</option>
+          <option value="recondition">Recondition</option>
+          <option value="price_change">Price change</option>
+          <option value="sold">Sold</option>
+          <option value="maintenance">Maintenance</option>
+          <option value="lien_assigned">Lien assigned (bank/insurer)</option>
+        </select>
+      </div>
+      <div class="col-3">
+        <label class="muted">Price</label>
+        <input id="price" type="number" placeholder="USD"/>
+      </div>
+      <div class="col-3">
+        <label class="muted">Mileage</label>
+        <input id="mileage" type="number" placeholder="miles"/>
+      </div>
+      <div class="col-3">
+        <label class="muted">Location</label>
+        <input id="location" value="SOUTH SAN FRANCISCO, CA"/>
+      </div>
+
+      <div class="col-3">
+        <label class="muted">Year</label>
+        <input id="year" type="number" value="2012"/>
+      </div>
+      <div class="col-3">
+        <label class="muted">Make</label>
+        <input id="make" value="Honda"/>
+      </div>
+      <div class="col-3">
+        <label class="muted">Model</label>
+        <input id="model" value="Crosstour"/>
+      </div>
+      <div class="col-3">
+        <label class="muted">Trim</label>
+        <input id="trim" value="EX-L"/>
+      </div>
+
+      <div class="col-6">
+        <label class="muted">Organization</label>
+        <input id="org" value="GERRY MOTORS"/>
+      </div>
+      <div class="col-6">
+        <label class="muted">Short description</label>
+        <input id="desc" placeholder="Highlights, service, warranty, etc."/>
+      </div>
+      <div class="col-12">
+        <label class="muted">Photos (up to 100)</label>
+        <input id="photos" type="file" accept="image/*" multiple />
+        <div class="help">JPG/PNG/WebP recommended. Keep file sizes reasonable for quick uploads.</div>
+      </div>
+
+      <!-- Auction-only visibility -->
+      <div id="dealersOnlyWrap" class="col-12" hidden>
+        <label><input type="checkbox" id="dealersOnly" /> Visible only to verified dealerships</label>
+      </div>
+
+      <!-- Lien fields (only when event = lien_assigned & role is bank/insurer) -->
+      <div id="lienBox" class="col-12" hidden>
+        <div class="divider"></div>
+        <div class="grid">
+          <div class="col-4"><label class="muted">Lienholder</label><input id="lienHolder" placeholder="e.g., First National Bank"/></div>
+          <div class="col-4"><label class="muted">Lien ID</label><input id="lienId" placeholder="Reference #"/></div>
+          <div class="col-4"><label class="muted">Appraised value (USD)</label><input id="appraised" type="number"/></div>
+        </div>
+      </div>
+
+      <div class="col-12 toolbar">
+        <button id="addEvent">Add event</button>
+        <button id="resetForm" class="ghost">Reset</button>
+        <span id="hint" class="help"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Timeline -->
+  <div id="results"></div>
+</main>
+
+<div id="toast" class="toast"></div>
+
+<!-- Ethers UMD -->
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
+<script>
+/* ==== LIVE CONFIG (your values) — hidden from users in the UI ==== */
+const ALCHEMY_API_URL  = "https://eth-sepolia.g.alchemy.com/v2/H-D3draiGJ6jecEzCwv8F";
+const CONTRACT_ADDRESS = "0xd458fe664215466d478ECa8434a067Ee221F0B06";
+const PINATA_JWT       = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24iOnsiaWQiOiJkYzRiYjI2ZS1lZjVlLTRhZjQtODcxZS1mMjFkNTFjMWU4MTEiLCJlbWFpbCI6ImdlcnJ5bW5tQGdtYWlsLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJwaW5fcG9saWN5Ijp7InJlZ2lvbnMiOlt7ImRlc2lyZWRSZXBsaWNhdGlvbkNvdW50IjoxLCJpZCI6IkZSQTEifSx7ImRlc2lyZWRSZXBsaWNhdGlvbkNvdW50IjoxLCJpZCI6Ik5ZQzEifV0sInZlcnNpb24iOjF9LCJtZmFfZW5hYmxlZCI6ZmFsc2UsInN0YXR1cyI6IkFDVElWRSJ9LCJhdXRoZW50aWNhdGlvblR5cGUiOiJzY29wZWRLZXkiLCJzY29wZWRLZXlLZXkiOiIxODc4MzIzNjI0ZDgwZGZhZTRjZCIsInNjb3BlZEtleVNlY3JldCI6IjJiZDExNDAxMTBkMzRlMDE3Zjc2MzYzYzk2MDFmNDNiMjliOGVhNmZlOTBmYTE2NjU5MjBjMzY4YWZlMzBiMTkiLCJleHAiOjE3ODczOTA0NzR9.8ztOuMtze7xZgWtXzPUxpaP6jhpu8FIkof0OGF03W9k";
+
+/* ==== Contract ABI — minimal ==== */
+const ABI = [
+  "function addRecord(string vin, string ipfsCid, bytes32 dataHash) external",
+  "function getRecordCount(string vin) view returns (uint256)",
+  "function getRecord(string vin, uint256 index) view returns (string,string,bytes32,uint256,address)"
+];
+
+/* ==== Roles + permissions (what to show / allow) ==== */
+const PERMS = {
+  owner:   { pii:true,  upload:true,  maxPhotos:100, auctionOnly:false, bankTools:false },
+  dealer:  { pii:false, upload:true,  maxPhotos:100, auctionOnly:false, bankTools:false },
+  auction: { pii:false, upload:true,  maxPhotos:100, auctionOnly:true,  bankTools:false },
+  bank:    { pii:false, upload:false, maxPhotos:0,   auctionOnly:false, bankTools:true  },
+  insurer: { pii:false, upload:false, maxPhotos:0,   auctionOnly:false, bankTools:true  },
+  dmv:     { pii:true,  upload:false, maxPhotos:0,   auctionOnly:false, bankTools:false },
+  guest:   { pii:false, upload:false, maxPhotos:0,   auctionOnly:false, bankTools:false }
+};
+
+/* ==== Helpers ==== */
+const $ = (id)=>document.getElementById(id);
+function showToast(msg, ms=2400){ const t=$("toast"); t.textContent=msg; t.style.display="block"; setTimeout(()=>t.style.display="none",ms); }
+function esc(s){ return (s??"").toString().replace(/[&<>"']/g,c=>({ "&":"&amp;","<":"&gt;",">":"&lt;","\"":"&quot;","'":"&#39;"}[c])); }
+function badge(type){
+  const cls = `event-badge ${type.replace(/\s+/g,'_')}`;
+  const label = ({
+    listed_for_sale:"Listed for sale",
+    inspection:"Inspection",
+    recondition:"Recondition",
+    price_change:"Price change",
+    sold:"Sold",
+    maintenance:"Maintenance",
+    lien_assigned:"Lien assigned"
+  }[type] || type);
+  return `<span class="${cls}">${esc(label)}</span>`;
+}
+function redactOwnerName(name, role){
+  if (!name) return "";
+  if (PERMS[role]?.pii) return name; // owners + DMV see it
+  const keepOrg = /MOTOR|AUTO|INC|LLC|BANK|AUCTION|INSUR|GOV|DMV|DEALER|MOTORS/i.test(name);
+  if (keepOrg) return name;
+  return name.split(/\s+/).filter(Boolean).map(p=>p[0]?.toUpperCase()+".").join(" ");
+}
+async function sha256Hex0x(str){
+  const buf = new TextEncoder().encode(str);
+  const dig = await crypto.subtle.digest("SHA-256", buf);
+  return "0x"+[...new Uint8Array(dig)].map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+
+/* ==== Providers ==== */
+const rpcProvider = new ethers.JsonRpcProvider(ALCHEMY_API_URL);
+
+/* ==== UI state ==== */
+$("role").addEventListener("change", applyRoleUI);
+$("event").addEventListener("change", () => { $("lienBox").hidden = ($("event").value!=="lien_assigned"); });
+$("photos").addEventListener("change", () => {
+  const role = $("role").value, max = PERMS[role]?.maxPhotos||0;
+  if (max && $("photos").files.length > max) { showToast(`This role can upload up to ${max} photos`); $("photos").value=""; }
+});
+function applyRoleUI(){
+  const role = $("role").value;
+  const p = PERMS[role]||PERMS.guest;
+  $("panel-actions").hidden = !(p.upload || p.bankTools);
+  $("dealersOnlyWrap").hidden = !p.auctionOnly;
+  $("lienBox").hidden = true; // toggled by event selection
+  $("hint").textContent = p.upload ? "Add listing/events. When saved, you'll see it appear in the timeline." :
+                     p.bankTools ? "Assign lien / appraisal and it will appear in the timeline." : "";
+}
+applyRoleUI();
+
+/* ==== IPFS (Pinata) ==== */
+async function pinFileToIPFS(file){
+  const fd = new FormData(); fd.append("file", file, file.name);
+  const r = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", { method:"POST", body:fd, headers:{ Authorization:`Bearer ${PINATA_JWT}` } });
+  if(!r.ok) throw new Error("Photo upload failed ("+r.status+")");
+  return await r.json(); // { IpfsHash, PinSize, Timestamp }
+}
+async function pinJSONToIPFS(obj, name){
+  const r = await fetch("https://api.pinata.cloud/pinning/pinJSONToIPFS", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json", Authorization:`Bearer ${PINATA_JWT}` },
+    body: JSON.stringify({ pinataContent: obj, pinataMetadata: { name } })
+  });
+  if(!r.ok) throw new Error("Data upload failed ("+r.status+")");
+  return await r.json(); // { IpfsHash, ... }
+}
+async function fetchJSONFromCID(cid){
+  const r=await fetch("https://ipfs.io/ipfs/"+cid);
+  if(!r.ok) throw new Error("IPFS fetch error "+r.status);
+  return await r.json();
+}
+
+/* ==== Timeline (read-only UI) ==== */
+$("load").onclick = () => loadHistory().catch(e=>showToast(e.message));
+$("clear").onclick = () => { $("results").innerHTML=""; };
+
+async function loadHistory(){
+  const vin = $("vin").value.trim();
+  const role = $("role").value;
+  const c = new ethers.Contract(CONTRACT_ADDRESS, ABI, rpcProvider);
+  const total = Number(await c.getRecordCount(vin));
+  const mount = $("results");
+  mount.innerHTML = `<div class="card"><div class="title">VIN ${esc(vin)}</div><div class="sub">${total} record(s)</div></div>`;
+  for(let i=0;i<total;i++){
+    const [v,cid,hash,ts,sender] = await c.getRecord(vin,i);
+    let json=null; try{ json=await fetchJSONFromCID(cid); }catch{}
+    const when = new Date(Number(ts)*1000).toLocaleString();
+    const evt = json?.events?.[0]?.type || "event";
+    const price = json?.attributes?.price;
+    const currency = json?.attributes?.currency || (price?"USD":"");
+    const photos = (json?.attributes?.photos||[]).map(p=>{
+      const url = "https://ipfs.io/ipfs/"+p.cid;
+      return `<a href="${url}" target="_blank"><img src="${url}" alt="photo"/></a>`;
+    }).join("");
+    const ownerName = redactOwnerName(json?.owner_name||"", role);
+    const vehicleLine = [json?.attributes?.year, json?.attributes?.make, json?.attributes?.model, json?.attributes?.trim].filter(Boolean).join(" ");
+
+    mount.insertAdjacentHTML("beforeend", `
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <div class="title">${badge(evt)} ${esc(vehicleLine||"")}</div>
+          <div class="status-secured">✅ Secured</div>
+        </div>
+        <div class="sub">${esc(when)} · ${esc(json?.attributes?.location||"")}</div>
+        ${price ? `<div style="margin-top:6px"><b>Price:</b> ${esc(price)} ${esc(currency)}</div>` : ""}
+        ${json?.attributes?.mileage ? `<div><b>Mileage:</b> ${esc(json.attributes.mileage)} mi</div>` : ""}
+        ${(json?.attributes?.lien && json.events?.[0]?.type==="lien_assigned") ? `
+          <div><b>Lien:</b> ${esc(json.attributes.lien.holder)} (ID: ${esc(json.attributes.lien.id)})</div>
+          ${json.attributes.lien.appraised? `<div><b>Appraised:</b> ${esc(json.attributes.lien.appraised)} USD</div>`:""}
+        `:""}
+        ${json?.attributes?.description ? `<div style="margin-top:6px">${esc(json.attributes.description)}</div>`:""}
+        <div class="sub" style="margin-top:6px"><b>Organization:</b> ${esc(json?.owner_type||"")} ${ownerName? "— "+esc(ownerName):""}</div>
+        ${photos ? `<div class="photos">${photos}</div>`:""}
+        ${json?.visibility?.audience==="dealers_only" ? `<div class="sub" style="margin-top:6px">Visible to verified dealerships</div>`:""}
+      </div>
+    `);
+  }
+}
+
+/* ==== Add event (no blockchain talk) ==== */
+$("addEvent").onclick = async () => {
+  try{
+    const role = $("role").value;
+    const p = PERMS[role]||PERMS.guest;
+    if (!p.upload && !p.bankTools) { showToast("This role cannot add events."); return; }
+
+    // Ask for signature only when needed — no on-screen blockchain details
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    await provider.send("eth_requestAccounts", []);
+    const signer = await provider.getSigner();
+    // Ensure Sepolia
+    const chainId = await provider.send("eth_chainId", []);
+    if (chainId !== "0xaa36a7"){
+      try { await provider.send("wallet_switchEthereumChain", [{ chainId:"0xaa36a7" }]); }
+      catch(e){ if(e.code===4902){
+        await provider.send("wallet_addEthereumChain", [{
+          chainId:"0xaa36a7", chainName:"Sepolia", nativeCurrency:{name:"SepoliaETH",symbol:"SEP",decimals:18},
+          rpcUrls:[ALCHEMY_API_URL], blockExplorerUrls:["https://sepolia.etherscan.io/"]
+        }]);
+      } else throw e; }
+    }
+
+    const vin = $("vin").value.trim();
+    const eventType = document.getElementById("event").value;
+    const data = {
+      schema: "vehicle-home@0.3",
+      vin,
+      owner_type: (role==="dealer"?"Dealer":role==="auction"?"Auction":role==="owner"?"Owner":role==="bank"?"Bank":role==="insurer"?"Insurer":role.toUpperCase()),
+      owner_name: $("org").value.trim(),
+      visibility: ($("dealersOnly").checked ? { audience:"dealers_only" } : undefined),
+      attributes: {
+        year: numVal("year"), make: val("make"), model: val("model"), trim: val("trim"),
+        mileage: numVal("mileage"), location: val("location"),
+        ...(val("price") ? { price: Number(val("price")), currency: "USD" } : {}),
+        ...(val("desc") ? { description: val("desc") } : {}),
+        photos: []
+      },
+      events: [{ type: (eventType==="Lien assigned (bank/insurer)"?"lien_assigned":eventType), date: new Date().toISOString(), metadata:{}, source:"Vehicle Home" }]
+    };
+
+    // Lien fields
+    if (eventType === "lien_assigned") {
+      data.attributes.lien = {
+        holder: val("lienHolder"),
+        id: val("lienId"),
+        ...(val("appraised") ? { appraised: Number(val("appraised")), currency:"USD" } : {})
+      };
+    }
+
+    // Photos
+    const files = [...$("photos").files];
+    if (files.length){
+      showToast("Uploading photos…");
+      for (let i=0;i<files.length;i++){
+        const r = await pinFileToIPFS(files[i]);
+        data.attributes.photos.push({ cid: r.IpfsHash, filename: files[i].name });
+      }
+    }
+
+    // Upload snapshot
+    const json = JSON.stringify(data, null, 2);
+    const hash = await sha256Hex0x(json);
+    showToast("Saving event…");
+    const { IpfsHash } = await pinJSONToIPFS(JSON.parse(json), `vehicle-home-${vin}`);
+
+    // Write to contract
+    const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+    const tx = await contract.addRecord(vin, IpfsHash, hash);
+    await tx.wait(); // silent confirm
+    showToast("Event saved ✔️");
+    await loadHistory();
+  }catch(e){
+    showToast(e?.message || "Error");
+  }
+};
+$("resetForm").onclick = ()=>{ ["price","mileage","location","year","make","model","trim","org","desc","photos","dealersOnly","lienHolder","lienId","appraised"].forEach(id=>{const el=$(id); if(!el) return; if(el.type==="file") el.value=""; else if(el.type==="checkbox") el.checked=false; else el.value="";}); $("event").value="listed_for_sale"; $("lienBox").hidden=true; };
+
+/* utils */
+function val(id){ return ($(id)?.value||"").trim(); }
+function numVal(id){ return $(id)?.value ? Number($(id).value) : undefined; }
+
+/* init */
+loadHistory().catch(()=>{});
+</script>
+</body>
+</html>

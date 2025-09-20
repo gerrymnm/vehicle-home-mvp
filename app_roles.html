@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Vehicle Home — Role UI</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #0f172a;
+    --muted: #64748b;
+    --line: #e2e8f0;
+    --accent: #111827;
+    --pill: #f1f5f9;
+    --ok: #10b981;
+    --warn: #f59e0b;
+    --bad: #ef4444;
+  }
+  * { box-sizing: border-box }
+  body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; color: var(--fg); background: var(--bg); }
+  header { padding: 14px 16px; border-bottom: 1px solid var(--line); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  h1 { margin: 0; font-size: 18px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .muted { color: var(--muted) }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace }
+  select, input, textarea, button { font-size: 14px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--fg); }
+  textarea { width: 100%; min-height: 70px; }
+  button { background: var(--accent); color: #fff; border: none; cursor: pointer; }
+  button.ghost { background: #fff; color: var(--accent); border: 1px solid var(--line); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  main { padding: 16px; max-width: 1100px; margin: 0 auto; }
+  .card { border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin: 12px 0; }
+  .grid { display: grid; gap: 10px; grid-template-columns: repeat(12, 1fr); }
+  .col-12 { grid-column: span 12 }
+  .col-6 { grid-column: span 6 }
+  .col-4 { grid-column: span 4 }
+  .col-3 { grid-column: span 3 }
+  .pill { background: var(--pill); border-radius: 999px; padding: 4px 10px; }
+  .badge { display:inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 12px; }
+  .badge.sold { background: #fee2e2; border-color: #fecaca; color: #991b1b }
+  .badge.price_change { background: #dcfce7; border-color: #bbf7d0; color: #065f46 }
+  .badge.recondition { background: #eef2ff; border-color: #e0e7ff; color: #3730a3 }
+  .badge.inspection { background: #fff7ed; border-color: #ffedd5; color: #9a3412 }
+  .badge.listed_for_sale { background: #f1f5f9; color: #334155 }
+  .photos img { max-height: 110px; border-radius: 8px; margin: 6px 6px 0 0; }
+  .status { white-space: pre-wrap; font-size: 12px; color: var(--muted); }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* mobile */
+  @media (max-width: 820px) {
+    .col-6, .col-4, .col-3 { grid-column: span 12; }
+    header { gap: 8px }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Vehicle Home</h1>
+  <span class="pill">Network: Sepolia</span>
+  <div class="row">
+    <label class="muted">Role</label>
+    <select id="role">
+      <option value="guest">Guest (read-only)</option>
+      <option value="owner">Owner</option>
+      <option value="dealer">Dealer</option>
+      <option value="auction">Auction</option>
+      <option value="bank">Bank</option>
+      <option value="insurer">Insurer</option>
+      <option value="dmv">DMV</option>
+    </select>
+  </div>
+  <div class="row">
+    <button id="connect">🔌 Connect MetaMask</button>
+    <span id="acct" class="muted"></span>
+  </div>
+  <div class="row mono muted">
+    Contract: <span id="contract"></span>
+  </div>
+</header>
+
+<main>
+  <!-- Search / VIN -->
+  <div class="card">
+    <div class="grid">
+      <div class="col-6">
+        <label class="muted">VIN</label>
+        <input id="vin" value="5J6TF3H33CL003984" />
+      </div>
+      <div class="col-6 row" style="align-items:flex-end; gap:8px">
+        <button id="load">🔎 Load History</button>
+        <button id="clear" class="ghost">Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Actions by role -->
+  <div id="panel-actions" class="card" hidden>
+    <div class="grid">
+      <!-- Dealer / Auction uploader -->
+      <div id="dealerBox" class="col-12" hidden>
+        <h3 style="margin:6px 0 10px">Add Listing / Condition Event</h3>
+        <div class="grid">
+          <div class="col-3"><label class="muted">Event</label>
+            <select id="event">
+              <option value="listed_for_sale">listed_for_sale</option>
+              <option value="inspection">inspection</option>
+              <option value="recondition">recondition</option>
+              <option value="price_change">price_change</option>
+              <option value="sold">sold</option>
+            </select>
+          </div>
+          <div class="col-3"><label class="muted">Price</label><input id="price" type="number" placeholder="e.g. 10495" /></div>
+          <div class="col-3"><label class="muted">Currency</label><input id="currency" value="USD" /></div>
+          <div class="col-3"><label class="muted">Mileage</label><input id="mileage" type="number" value="110000" /></div>
+          <div class="col-3"><label class="muted">Year</label><input id="year" type="number" value="2012" /></div>
+          <div class="col-3"><label class="muted">Make</label><input id="make" value="Honda" /></div>
+          <div class="col-3"><label class="muted">Model</label><input id="model" value="Crosstour" /></div>
+          <div class="col-3"><label class="muted">Trim</label><input id="trim" value="EX-L" /></div>
+          <div class="col-6"><label class="muted">Location</label><input id="location" value="SOUTH SAN FRANCISCO, CA" /></div>
+          <div class="col-6"><label class="muted">Dealer / Auction Name</label><input id="owner_name" value="GERRY MOTORS" /></div>
+          <div class="col-12"><label class="muted">Description (public)</label><textarea id="desc" placeholder="Vehicle highlights, warranty, certification, unique benefits, etc."></textarea></div>
+          <div class="col-12"><label class="muted">Photos (up to 100)</label><input id="photos" type="file" accept="image/*" multiple /></div>
+          <div id="dealerRestrictedWrap" class="col-12" hidden>
+            <label><input type="checkbox" id="auctionOnlyDealers" /> Visible only to verified dealerships</label>
+          </div>
+          <div class="col-12 row" style="gap:8px">
+            <button id="addRecord">➕ Add Record</button>
+            <span class="muted">PNG/JPG/WebP — keep individual files reasonable in size.</span>
+          </div>
+          <div id="status" class="col-12 status"></div>
+        </div>
+      </div>
+
+      <!-- Bank / Insurer lien tool -->
+      <div id="bankBox" class="col-12" hidden>
+        <h3 style="margin:6px 0 10px">Lien & Valuation</h3>
+        <div class="grid">
+          <div class="col-4"><label class="muted">Lienholder (public)</label><input id="lienholder" placeholder="e.g. ABC Bank"/></div>
+          <div class="col-4"><label class="muted">Lien ID (public)</label><input id="lienId" placeholder="bank/insurer ref"/></div>
+          <div class="col-4"><label class="muted">Appraised Value</label><input id="appraised" type="number" placeholder="enter value"/></div>
+          <div class="col-12"><label class="muted">Note (public)</label><textarea id="lienNote" placeholder="optional public note"></textarea></div>
+          <div class="col-12 row" style="gap:8px">
+            <button id="assignLien">🏷️ Assign Lien / Appraisal</button>
+            <span class="muted">We’ll anchor a JSON snapshot with lien/appraisal details to IPFS and write a chain event.</span>
+          </div>
+          <div id="statusBank" class="col-12 status"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="results"></div>
+</main>
+
+<!-- Ethers UMD -->
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
+<script>
+/*** LIVE CONFIG (pre-filled) ***/
+const CONTRACT_ADDRESS = "0xd458fe664215466d478ECa8434a067Ee221F0B06";
+const ALCHEMY_API_URL  = "https://eth-sepolia.g.alchemy.com/v2/H-D3draiGJ6jecEzCwv8F";
+// ⇩ paste your Pinata JWT here
+const PINATA_JWT       = "PASTE_YOUR_PINATA_JWT_HERE";
+/*******************************/
+
+const ABI = [
+  "function addRecord(string vin, string ipfsCid, bytes32 dataHash) external",
+  "function getRecordCount(string vin) view returns (uint256)",
+  "function getRecord(string vin, uint256 index) view returns (string,string,bytes32,uint256,address)"
+];
+
+document.getElementById("contract").textContent = CONTRACT_ADDRESS;
+
+/* ---------- Permissions matrix ---------- */
+const PERMS = {
+  owner:   { pii:true,  upload:true, maxPhotos:100, description:true, bankTools:false, auctionOnly:false },
+  dealer:  { pii:false, upload:true, maxPhotos:100, description:true, bankTools:false, auctionOnly:false },
+  auction: { pii:false, upload:true, maxPhotos:100, description:true, bankTools:false, auctionOnly:true  },
+  bank:    { pii:false, upload:false, maxPhotos:0,   description:false, bankTools:true, auctionOnly:false },
+  insurer: { pii:false, upload:false, maxPhotos:0,   description:false, bankTools:true, auctionOnly:false },
+  dmv:     { pii:true,  upload:false, maxPhotos:0,   description:false, bankTools:false, auctionOnly:false },
+  guest:   { pii:false, upload:false, maxPhotos:0,   description:false, bankTools:false, auctionOnly:false },
+};
+
+const $ = (id)=>document.getElementById(id);
+function esc(s){return (s??"").toString().replace(/[&<>"']/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+function badge(t){ return `<span class="badge ${esc(t)}">${esc(t)}</span>`; }
+function redactOwnerName(name, role){
+  if (!name) return "";
+  if (PERMS[role]?.pii) return name;       // owner, dmv
+  // others see redacted owner names (keep org names if not obviously personal)
+  // very simple heuristic: if contains a space and not ALL CAPS OR ends with INC/LLC/etc → redact initials
+  const keep = /MOTOR|AUTO|INC|LLC|BANK|AUCTION|INSUR|GOV|DMV|DEALER|MOTORS/i.test(name);
+  if (keep) return name;
+  const parts = name.split(/\s+/).filter(Boolean);
+  return parts.map(p=>p[0].toUpperCase()+".").join(" ");
+}
+async function sha256Hex0x(str){
+  const buf = new TextEncoder().encode(str);
+  const dig = await crypto.subtle.digest("SHA-256", buf);
+  return "0x" + [...new Uint8Array(dig)].map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+
+/* ---------- Wallet ---------- */
+let browserProvider, signer, account;
+$("connect").onclick = async () => {
+  if (!window.ethereum) { alert("Please install MetaMask"); return; }
+  browserProvider = new ethers.BrowserProvider(window.ethereum);
+  const chainId = await browserProvider.send("eth_chainId", []);
+  if (chainId !== "0xaa36a7") {
+    try { await browserProvider.send("wallet_switchEthereumChain", [{ chainId:"0xaa36a7" }]); }
+    catch(e){
+      if (e.code===4902) {
+        await browserProvider.send("wallet_addEthereumChain", [{
+          chainId:"0xaa36a7", chainName:"Sepolia",
+          nativeCurrency:{name:"SepoliaETH",symbol:"SEP",decimals:18},
+          rpcUrls:[ALCHEMY_API_URL], blockExplorerUrls:["https://sepolia.etherscan.io/"]
+        }]);
+      } else { throw e; }
+    }
+  }
+  const accts = await browserProvider.send("eth_requestAccounts", []);
+  account = accts[0]; signer = await browserProvider.getSigner();
+  $("acct").textContent = "Connected: " + account;
+  applyRoleUI();
+};
+
+/* ---------- Role UI ---------- */
+$("role").onchange = applyRoleUI;
+function applyRoleUI(){
+  const role = $("role").value;
+  const p = PERMS[role] || PERMS.guest;
+  $("panel-actions").hidden = !(p.upload || p.bankTools);
+  $("dealerBox").hidden = !p.upload;
+  $("bankBox").hidden = !p.bankTools;
+  $("dealerRestrictedWrap").hidden = !(role === "auction");
+  // limit photos
+  $("photos").value = "";
+  $("photos").onchange = () => {
+    const files = $("photos").files;
+    if (files.length > p.maxPhotos) {
+      alert(`This role can upload up to ${p.maxPhotos} photos`);
+      $("photos").value = "";
+    }
+  };
+}
+
+/* ---------- IPFS (Pinata) ---------- */
+async function pinFileToIPFS(file){
+  const fd = new FormData();
+  fd.append("file", file, file.name);
+  const r = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
+    method:"POST", body:fd, headers:{ Authorization:`Bearer ${PINATA_JWT}` }
+  });
+  if(!r.ok) throw new Error("Pinata file upload failed: "+r.status);
+  const d = await r.json();
+  return { cid: d.IpfsHash, filename: file.name };
+}
+async function pinJSONToIPFS(obj, name){
+  const r = await fetch("https://api.pinata.cloud/pinning/pinJSONToIPFS", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json", Authorization:`Bearer ${PINATA_JWT}` },
+    body: JSON.stringify({ pinataContent: obj, pinataMetadata: { name } })
+  });
+  if(!r.ok) throw new Error("Pinata JSON upload failed: "+r.status);
+  const d = await r.json();
+  return d.IpfsHash;
+}
+async function fetchJSONFromCID(cid){
+  const r=await fetch("https://ipfs.io/ipfs/"+cid);
+  if(!r.ok) throw new Error("IPFS fetch "+r.status);
+  return await r.json();
+}
+
+/* ---------- Read history ---------- */
+$("load").onclick = () => loadHistory().catch(e=>alert(e.message));
+$("clear").onclick = () => { $("results").innerHTML = ""; };
+
+async function loadHistory(){
+  const vin = $("vin").value.trim();
+  const role = $("role").value;
+  const provider = new ethers.JsonRpcProvider(ALCHEMY_API_URL);
+  const c = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
+  const n = Number(await c.getRecordCount(vin));
+  const el = $("results");
+  el.innerHTML = `<div class="card"><b>VIN ${esc(vin)}</b> — ${n} record(s)</div>`;
+  for(let i=0;i<n;i++){
+    const [v,cid,hash,ts,sender] = await c.getRecord(vin,i);
+    let json = null; let err=null;
+    try{ json = await fetchJSONFromCID(cid); }catch(e){ err=e; }
+    const ipfs = `https://ipfs.io/ipfs/${cid}`;
+    const when = new Date(Number(ts)*1000).toLocaleString();
+    const evtType = json?.events?.[0]?.type || "event";
+    const photos = (json?.attributes?.photos||[]).map(p=>(
+      `<a href="https://ipfs.io/ipfs/${p.cid}" target="_blank"><img src="https://ipfs.io/ipfs/${p.cid}" alt="${esc(p.filename)}"/></a>`
+    )).join("");
+
+    // redact owner_name if needed
+    const rawOwner = (json?.owner_name)||"";
+    const shownOwner = redactOwnerName(rawOwner, role);
+
+    el.insertAdjacentHTML("beforeend", `
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <div><b>#${i}</b> • <a href="${ipfs}" target="_blank">${esc(cid)}</a></div>
+          <div class="muted mono">Hash: ${esc(hash)}</div>
+        </div>
+        <div class="muted">${esc(when)} — ${esc(sender)}</div>
+        ${json ? `
+          <hr/>
+          <div class="grid">
+            <div class="col-6"><b>Owner</b>: ${esc(json.owner_type)} — ${esc(shownOwner)}</div>
+            <div class="col-6">${badge(evtType)}</div>
+
+            <div class="col-6"><b>Vehicle</b>: ${esc(json.attributes?.year)} ${esc(json.attributes?.make)} ${esc(json.attributes?.model)} ${esc(json.attributes?.trim||"")}</div>
+            <div class="col-6"><b>Mileage</b>: ${esc(json.attributes?.mileage)}</div>
+
+            <div class="col-6"><b>Location</b>: ${esc(json.attributes?.location||"-")}</div>
+            <div class="col-6">${json.attributes?.price ? `<b>Price</b>: ${esc(json.attributes.price)} ${esc(json.attributes.currency||"USD")}` : ""}</div>
+
+            ${json.attributes?.description ? `<div class="col-12"><b>Description</b>: ${esc(json.attributes.description)}</div>` : ""}
+
+            ${json.attributes?.lien ? `
+              <div class="col-12"><b>Lien</b>: ${esc(json.attributes.lien.holder)} (ID: ${esc(json.attributes.lien.id)})</div>
+              ${json.attributes.lien.appraised ? `<div class="col-12"><b>Appraised</b>: ${esc(json.attributes.lien.appraised)} ${esc(json.attributes.lien.currency||"USD")}</div>`:""}
+              ${json.attributes.lien.note ? `<div class="col-12 muted">Note: ${esc(json.attributes.lien.note)}</div>`:""}
+            `:""}
+          </div>
+          ${photos ? `<div class="photos" style="margin-top:8px">${photos}</div>` : ""}
+          ${json?.visibility?.audience==="dealers_only" ? `<div class="muted" style="margin-top:6px">Visibility: Verified dealerships only</div>`:""}
+        ` : `<div style="color:#b00; margin-top:6px">Could not fetch JSON from IPFS${err?": "+esc(err):""}</div>`}
+      </div>
+    `);
+  }
+}
+
+/* ---------- Add record (Dealer/Auction/Owner) ---------- */
+$("addRecord").onclick = async () => {
+  try {
+    if (!signer) await $("connect").click();
+    const role = $("role").value;
+    const perms = PERMS[role]||PERMS.guest;
+    if (!perms.upload) { alert("This role cannot add records."); return; }
+
+    const vin = $("vin").value.trim();
+    const eventType = $("event").value;
+    const price = $("price").value ? Number($("price").value) : undefined;
+    const currency = $("currency").value.trim() || "USD";
+    const mileage = $("mileage").value ? Number($("mileage").value) : undefined;
+    const year = $("year").value ? Number($("year").value) : undefined;
+    const make = $("make").value.trim();
+    const model = $("model").value.trim();
+    const trim = $("trim").value.trim();
+    const location = $("location").value.trim();
+    const owner_name = $("owner_name").value.trim();
+    const desc = $("desc").value.trim();
+    const dealersOnly = $("auctionOnlyDealers").checked;
+
+    const status = $("status"); status.textContent = "Preparing photos…";
+    const files = [...$("photos").files];
+    const photoEntries = [];
+    for (let i=0;i<files.length;i++){
+      status.textContent = `Uploading photo ${i+1}/${files.length}…`;
+      const res = await pinFileToIPFS(files[i]);
+      photoEntries.push(res);
+    }
+
+    const snapshot = {
+      schema: "vehicle-home@0.3",
+      vin,
+      owner_type: role==="auction" ? "Auction" : "Dealer",
+      owner_name,
+      visibility: dealersOnly ? { audience: "dealers_only" } : undefined,
+      attributes: {
+        year, make, model, trim, mileage, location,
+        ...(price ? { price, currency } : {}),
+        ...(desc ? { description: desc } : {}),
+        photos: photoEntries,
+      },
+      events: [
+        { type: eventType, date: new Date().toISOString(), metadata: {}, source: "Vehicle Home App" }
+      ]
+    };
+
+    const json = JSON.stringify(snapshot, null, 2);
+    const hash = await sha256Hex0x(json);
+    status.textContent = `Hash: ${hash}\nPinning JSON…`;
+    const cid = await pinJSONToIPFS(JSON.parse(json), `vehicle-home-${vin}`);
+    status.textContent += `\nCID: ${cid}\nSending transaction…`;
+
+    const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+    const tx = await contract.addRecord(vin, cid, hash);
+    status.textContent += `\nTx: ${tx.hash}\nWaiting to finalize…`;
+    const rc = await tx.wait();
+    status.textContent += `\nMined in block ${rc.blockNumber} ✅`;
+    await loadHistory();
+  } catch (e) {
+    $("status").textContent = "Error: " + (e?.message||e);
+  }
+};
+
+/* ---------- Lien / Appraisal (Bank/Insurer) ---------- */
+$("assignLien").onclick = async () => {
+  try{
+    if (!signer) await $("connect").click();
+    const role = $("role").value;
+    const perms = PERMS[role]||PERMS.guest;
+    if (!perms.bankTools) { alert("This role cannot assign liens."); return; }
+
+    const vin = $("vin").value.trim();
+    const lienholder = $("lienholder").value.trim();
+    const lienId = $("lienId").value.trim();
+    const appraised = $("appraised").value ? Number($("appraised").value) : undefined;
+    const lienNote = $("lienNote").value.trim();
+
+    const status = $("statusBank");
+    const snapshot = {
+      schema:"vehicle-home@0.3",
+      vin,
+      owner_type: (role==="bank"?"Bank":"Insurer"),
+      owner_name: (role==="bank"?"(Bank)":"(Insurer)"),
+      attributes:{
+        lien: { holder: lienholder, id: lienId, ...(appraised?{appraised, currency:"USD"}:{}), note: lienNote }
+      },
+      events:[
+        { type:"lien_assigned", date: new Date().toISOString(), metadata:{}, source:"Vehicle Home App" }
+      ]
+    };
+
+    const json = JSON.stringify(snapshot, null, 2);
+    const hash = await sha256Hex0x(json);
+    status.textContent = `Hash: ${hash}\nPinning JSON…`;
+    const cid = await pinJSONToIPFS(JSON.parse(json), `vehicle-lien-${vin}`);
+    status.textContent += `\nCID: ${cid}\nSending transaction…`;
+
+    const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+    const tx = await contract.addRecord(vin, cid, hash);
+    status.textContent += `\nTx: ${tx.hash}\nWaiting to finalize…`;
+    const rc = await tx.wait();
+    status.textContent += `\nMined in block ${rc.blockNumber} ✅`;
+    await loadHistory();
+  }catch(e){
+    $("statusBank").textContent = "Error: " + (e?.message||e);
+  }
+};
+
+/* init */
+applyRoleUI();
+loadHistory().catch(()=>{});
+</script>
+</body>
+</html>

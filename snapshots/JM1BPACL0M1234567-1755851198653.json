@@ -1,0 +1,20 @@
+{
+  "vin": "JM1BPACL0M1234567",
+  "owner_type": "Dealer",
+  "owner_name": "Marin Mazda",
+  "attributes": {
+    "year": 2021,
+    "make": "Mazda",
+    "model": "Mazda3",
+    "trim": "Preferred",
+    "mileage": 25412,
+    "location": "San Rafael, CA"
+  },
+  "events": [
+    {
+      "type": "listed_for_sale",
+      "date": "2025-08-22T08:26:38.651Z",
+      "source": "Vehicle Home CLI"
+    }
+  ]
+}

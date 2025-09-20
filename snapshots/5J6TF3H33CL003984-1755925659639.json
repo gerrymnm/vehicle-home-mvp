@@ -1,0 +1,25 @@
+{
+  "schema": "vehicle-home@0.2",
+  "vin": "5J6TF3H33CL003984",
+  "owner_type": "Dealer",
+  "owner_name": "GERRY MOTORS",
+  "attributes": {
+    "year": 2012,
+    "make": "Honda",
+    "model": "Crosstour",
+    "trim": "EX-L",
+    "mileage": 110000,
+    "location": "SOUTH SAN FRANCISCO, CA",
+    "photos": []
+  },
+  "events": [
+    {
+      "type": "inspection",
+      "date": "2025-08-23T05:07:39.637Z",
+      "metadata": {
+        "note": "Passed 125-pt inspection"
+      },
+      "source": "Vehicle Home CLI"
+    }
+  ]
+}
