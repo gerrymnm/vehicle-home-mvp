@@ -1,13 +1,13 @@
 import React from "react";
 import { Routes, Route, Link, useNavigate } from "react-router-dom";
 
-// NOTE: no extensions here; Vite resolves .jsx/.js either way.
+// IMPORTANT: match the exact filenames/casing in /src/pages
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Search from "./pages/Search";
-import VehicleDetails from "./pages/VehicleDetails";
-import DealerDashboard from "./pages/DealerDashboard";
+import Vehicledetails from "./pages/Vehicledetails";     // file is Vehicledetails.jsx
+import Dealerdashboard from "./pages/Dealerdashboard";   // file is Dealerdashboard.jsx
 
 import { useAuth, RequireAuth } from "./lib/auth.jsx";
 
@@ -44,14 +44,14 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/search" element={<Search />} />
-          <Route path="/vehicles/:vin" element={<VehicleDetails />} />
+          <Route path="/vehicles/:vin" element={<Vehicledetails />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route
             path="/dealer"
             element={
               <RequireAuth roles={["dealer","admin"]}>
-                <DealerDashboard />
+                <Dealerdashboard />
               </RequireAuth>
             }
           />
