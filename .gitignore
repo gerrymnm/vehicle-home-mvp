@@ -1,0 +1,20 @@
+# Node
+**/node_modules/
+**/dist/
+**/build/
+npm-debug.log*
+yarn-error.log*
+
+# Env files (keep secrets out of git)
+**/.env
+**/.env.*
+!.env.example
+
+# IDE/editor
+.vscode/
+.idea/
+.DS_Store
+
+# Misc
+coverage/
+*.local
