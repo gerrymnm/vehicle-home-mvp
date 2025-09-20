@@ -1,3 +1,13 @@
+/**
+ * Vehicle search & write APIs
+ * - Public: GET /api/search, GET /api/vehicles, GET /api/vehicles/:vin
+ * - Auth'd dealers/consumers/admins:
+ *   POST /api/vehicles
+ *   PATCH /api/vehicles/:vin
+ *   POST  /api/vehicles/:vin/sold
+ *   DELETE /api/vehicles/:vin
+ *   POST  /api/vehicles/import   (bulk import)
+ */
 import { Router, Request, Response } from "express";
 import {
   queryVehiclesAdvanced,
@@ -5,7 +15,7 @@ import {
   upsertVehicle,
   patchVehicle,
   deleteVehicle,
-  markSold
+  markSold,
 } from "./store/sqlstore";
 import type { Vehicle } from "./store/sqlstore";
 import { requireAuth } from "./auth_mw";
@@ -44,7 +54,7 @@ searchRouter.get("/search", async (req: Request, res: Response) => {
     dir: (req.query.dir as "asc" | "desc") ?? "asc",
     page: num(req.query.page),
     pageSize: num(req.query.pageSize),
-    includeOutOfStock: bool(req.query.includeOutOfStock)
+    includeOutOfStock: bool(req.query.includeOutOfStock),
   });
   res.json(results);
 });
@@ -65,7 +75,7 @@ searchRouter.get("/vehicles", async (req: Request, res: Response) => {
     dir: (req.query.dir as "asc" | "desc") ?? "asc",
     page: num(req.query.page),
     pageSize: num(req.query.pageSize),
-    includeOutOfStock: bool(req.query.includeOutOfStock)
+    includeOutOfStock: bool(req.query.includeOutOfStock),
   });
   res.json(results);
 });
@@ -77,67 +87,160 @@ searchRouter.get("/vehicles/:vin", async (req: Request, res: Response) => {
 });
 
 /* --------------- protected writes --------------- */
-searchRouter.post("/vehicles", requireAuth, async (req: Request, res: Response) => {
-  const payload = req.body as Vehicle;
-  if (!payload?.vin) return res.status(400).json({ error: "VIN is required" });
+searchRouter.post(
+  "/vehicles",
+  requireAuth,
+  async (req: Request, res: Response) => {
+    const payload = req.body as Vehicle;
+    if (!payload?.vin) return res.status(400).json({ error: "VIN is required" });
 
-  if (req.user?.role === "dealer") {
-    payload.dealerId = req.user.dealerId ?? null;
-    payload.ownerUserId = null;
-  } else if (req.user?.role === "consumer") {
-    payload.ownerUserId = req.user.id;
-    payload.dealerId = null;
-    payload.inStock = false;
+    if (req.user?.role === "dealer") {
+      payload.dealerId = req.user.dealerId ?? null;
+      payload.ownerUserId = null;
+    } else if (req.user?.role === "consumer") {
+      payload.ownerUserId = req.user.id;
+      payload.dealerId = null;
+      payload.inStock = false;
+    }
+
+    const saved = await upsertVehicle(payload);
+    res.status(201).json(saved);
   }
+);
 
-  const saved = await upsertVehicle(payload);
-  res.status(201).json(saved);
-});
+searchRouter.patch(
+  "/vehicles/:vin",
+  requireAuth,
+  async (req: Request, res: Response) => {
+    const vin = req.params.vin;
+    const target = await getVehicle(vin);
+    if (!target) return res.status(404).json({ error: "Not found" });
 
-searchRouter.patch("/vehicles/:vin", requireAuth, async (req: Request, res: Response) => {
-  const vin = req.params.vin;
-  const target = await getVehicle(vin);
-  if (!target) return res.status(404).json({ error: "Not found" });
+    if (req.user?.role !== "admin") {
+      const ownsAsDealer =
+        req.user?.role === "dealer" && target.dealerId === req.user?.dealerId;
+      const ownsAsConsumer =
+        req.user?.role === "consumer" && target.ownerUserId === req.user?.id;
+      if (!ownsAsDealer && !ownsAsConsumer)
+        return res.status(403).json({ error: "Forbidden" });
+    }
 
-  if (req.user?.role !== "admin") {
-    const ownsAsDealer = req.user?.role === "dealer" && target.dealerId === req.user?.dealerId;
-    const ownsAsConsumer = req.user?.role === "consumer" && target.ownerUserId === req.user?.id;
-    if (!ownsAsDealer && !ownsAsConsumer) return res.status(403).json({ error: "Forbidden" });
+    const updated = await patchVehicle(vin, req.body as Partial<Vehicle>);
+    res.json(updated);
   }
+);
 
-  const updated = await patchVehicle(vin, req.body as Partial<Vehicle>);
-  res.json(updated);
-});
+searchRouter.post(
+  "/vehicles/:vin/sold",
+  requireAuth,
+  async (req: Request, res: Response) => {
+    const vin = req.params.vin;
+    const target = await getVehicle(vin);
+    if (!target) return res.status(404).json({ error: "Not found" });
 
-searchRouter.post("/vehicles/:vin/sold", requireAuth, async (req: Request, res: Response) => {
-  const vin = req.params.vin;
-  const target = await getVehicle(vin);
-  if (!target) return res.status(404).json({ error: "Not found" });
+    if (req.user?.role !== "admin") {
+      const ownsAsDealer =
+        req.user?.role === "dealer" && target.dealerId === req.user?.dealerId;
+      const ownsAsConsumer =
+        req.user?.role === "consumer" && target.ownerUserId === req.user?.id;
+      if (!ownsAsDealer && !ownsAsConsumer)
+        return res.status(403).json({ error: "Forbidden" });
+    }
 
-  if (req.user?.role !== "admin") {
-    const ownsAsDealer = req.user?.role === "dealer" && target.dealerId === req.user?.dealerId;
-    const ownsAsConsumer = req.user?.role === "consumer" && target.ownerUserId === req.user?.id;
-    if (!ownsAsDealer && !ownsAsConsumer) return res.status(403).json({ error: "Forbidden" });
+    const body: any = req.body || {};
+    const note: string | undefined = body.note ? String(body.note) : undefined;
+    const updated = await markSold(vin, note);
+    res.json(updated);
   }
+);
 
-  const body: any = req.body || {};
-  const note: string | undefined = body.note ? String(body.note) : undefined;
-  const updated = await markSold(vin, note);
-  res.json(updated);
-});
+searchRouter.delete(
+  "/vehicles/:vin",
+  requireAuth,
+  async (req: Request, res: Response) => {
+    const vin = req.params.vin;
+    const target = await getVehicle(vin);
+    if (!target) return res.status(404).json({ error: "Not found" });
 
-searchRouter.delete("/vehicles/:vin", requireAuth, async (req: Request, res: Response) => {
-  const vin = req.params.vin;
-  const target = await getVehicle(vin);
-  if (!target) return res.status(404).json({ error: "Not found" });
+    if (req.user?.role !== "admin") {
+      const ownsAsDealer =
+        req.user?.role === "dealer" && target.dealerId === req.user?.dealerId;
+      const ownsAsConsumer =
+        req.user?.role === "consumer" && target.ownerUserId === req.user?.id;
+      if (!ownsAsDealer && !ownsAsConsumer)
+        return res.status(403).json({ error: "Forbidden" });
+    }
 
-  if (req.user?.role !== "admin") {
-    const ownsAsDealer = req.user?.role === "dealer" && target.dealerId === req.user?.dealerId;
-    const ownsAsConsumer = req.user?.role === "consumer" && target.ownerUserId === req.user?.id;
-    if (!ownsAsDealer && !ownsAsConsumer) return res.status(403).json({ error: "Forbidden" });
+    const ok = await deleteVehicle(vin);
+    if (!ok) return res.status(404).json({ error: "Not found" });
+    res.status(204).send();
   }
+);
 
-  const ok = await deleteVehicle(vin);
-  if (!ok) return res.status(404).json({ error: "Not found" });
-  res.status(204).send();
-});
+/* --------------- bulk import (dealer/admin) --------------- */
+type ImportRow = Partial<Vehicle> & { vin?: string };
+searchRouter.post(
+  "/vehicles/import",
+  requireAuth,
+  async (req: Request, res: Response) => {
+    const body = Array.isArray(req.body?.vehicles) ? req.body.vehicles : req.body;
+    if (!Array.isArray(body)) {
+      return res
+        .status(400)
+        .json({ error: "Expected an array of vehicles or {vehicles: [...]}." });
+    }
+
+    const rows: ImportRow[] = body;
+    const out = {
+      inserted: 0,
+      updated: 0,
+      errors: [] as { vin?: string; error: string }[],
+    };
+
+    for (const raw of rows) {
+      try {
+        const vin = String(raw.vin || "").trim();
+        if (!vin) throw new Error("Missing VIN");
+
+        const payload: Vehicle = {
+          vin,
+          year: Number(raw.year) || new Date().getFullYear(),
+          make: String(raw.make || "").trim(),
+          model: String(raw.model || "").trim(),
+          trim: raw.trim ? String(raw.trim) : undefined,
+          mileage:
+            raw.mileage !== undefined ? Number(raw.mileage) : undefined,
+          price: raw.price !== undefined ? Number(raw.price) : undefined,
+          location: raw.location ? String(raw.location) : undefined,
+          inStock: raw.inStock !== undefined ? Boolean(raw.inStock) : true,
+          dealerId: null,
+          ownerUserId: null,
+        };
+
+        if (req.user?.role === "dealer") {
+          payload.dealerId = req.user.dealerId ?? null;
+          payload.ownerUserId = null;
+        } else if (req.user?.role === "consumer") {
+          // consumers cannot bulk import
+          throw new Error("Forbidden for consumer role");
+        }
+
+        const before = await getVehicle(vin);
+        await upsertVehicle(payload);
+        if (before) out.updated++;
+        else out.inserted++;
+      } catch (e: any) {
+        out.errors.push({
+          vin: (raw && (raw as any).vin) || undefined,
+          error: e?.message || "failed",
+        });
+      }
+    }
+
+    const status = out.errors.length ? 207 /* Multi-Status */ : 201;
+    res.status(status).json(out);
+  }
+);
+
+// NOTE: We intentionally avoid a second export statement like `export { searchRouter }`
+// to prevent "Cannot redeclare exported variable 'searchRouter'" errors.
