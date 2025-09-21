@@ -1,39 +1,36 @@
-// Load environment variables from vehicle-backend/.env
 import "dotenv/config";
-
 import express from "express";
 import cors from "cors";
+
+import leadsRouter from "./leads";
 import { initDB } from "./db";
 
-// NOTE: these are named exports in this project
+// Your feature routers export **named** routers; import them as named:
 import { searchRouter } from "./search";
 import { metricsRouter } from "./metrics";
 import { eventsRouter } from "./events";
 
-// Leads router is the default export
-import leadsRouter from "./leads";
-
 const app = express();
 
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors());
 app.use(express.json());
 
-// mount all API routes under /api
-const api = express.Router();
-api.use(searchRouter);
-api.use(metricsRouter);
-api.use(eventsRouter);
-api.use(leadsRouter);
-app.use("/api", api);
-
-// health
+// Health
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
+
+// Leads API
+app.use("/api/leads", leadsRouter);
+
+// Existing feature routes (paths are defined inside each file)
+app.use("/", searchRouter);
+app.use("/", metricsRouter);
+app.use("/", eventsRouter);
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || "0.0.0.0";
 
 async function main() {
-  await initDB();
+  await initDB(); // ensure tables exist before serving traffic
   app.listen(PORT, HOST, () => {
     console.log(`[backend] listening on http://${HOST}:${PORT}`);
   });
