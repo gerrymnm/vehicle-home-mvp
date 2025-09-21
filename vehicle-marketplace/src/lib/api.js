@@ -1,15 +1,46 @@
-export const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8080").replace(/\/$/, "");
-function getAccessToken() { if (typeof localStorage === "undefined") return null; return localStorage.getItem("vh_at") || null; }
-export function setTokens(tokens = {}) { if (typeof localStorage === "undefined") return; const { accessToken, refreshToken } = tokens; if (accessToken) localStorage.setItem("vh_at", accessToken); else localStorage.removeItem("vh_at"); if (refreshToken) localStorage.setItem("vh_rt", refreshToken); else localStorage.removeItem("vh_rt"); }
-export function clearTokens() { if (typeof localStorage === "undefined") return; localStorage.removeItem("vh_at"); localStorage.removeItem("vh_rt"); }
-async function request(path, options = {}) { const headers = { ...(options.headers || {}) }; const at = getAccessToken(); if (at) headers.Authorization = `Bearer ${at}`; const res = await fetch(`${API_BASE}${path}`, { ...options, headers }); if (!res.ok) { let msg; try { const data = await res.json(); msg = data?.error || data?.message; } catch { msg = await res.text(); } throw new Error(msg || `${options.method || "GET"} ${path} failed (${res.status})`); } if (res.status === 204) return null; const c = res.headers.get("content-type") || ""; return c.includes("application/json") ? res.json() : res.text(); }
-function get(path) { return request(path); }
-function post(path, body) { return request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) }); }
-function patch(path, body) { return request(path, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) }); }
-export const http = { base: API_BASE, get, post, patch };
-export const api = { base: API_BASE, request, get, post, patch, setTokens, clearTokens };
-export function searchVehicles({ q = "", page = 1, sort = "relevance" } = {}) { const p = new URLSearchParams(); if (q) p.set("q", q); if (page) p.set("page", String(page)); if (sort) p.set("sort", sort); return get(`/search?${p.toString()}`); }
-export function fetchVehicleByVin(vin) { return get(`/vehicles/${encodeURIComponent(vin)}`); }
-export function createLead(payload) { return post(`/api/leads`, payload); }
-export function fetchDealerLeads() { return get(`/dealer/leads`); }
-export function updateLead(id, data) { return patch(`/dealer/leads/${id}`, data); }
+const BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8080").replace(/\/$/, "");
+
+function getToken() {
+  try {
+    return localStorage.getItem("access_token") || "";
+  } catch {
+    return "";
+  }
+}
+
+export async function http(path, opts = {}) {
+  const headers = new Headers(opts.headers || {});
+  headers.set("Content-Type", headers.get("Content-Type") || "application/json");
+  const tok = getToken();
+  if (tok) headers.set("Authorization", `Bearer ${tok}`);
+  const res = await fetch(`${BASE}${path}`, { ...opts, headers });
+  const text = await res.text();
+  let data;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (!res.ok) throw Object.assign(new Error("HTTP"), { status: res.status, data });
+  return data;
+}
+
+export function setTokens({ access_token, refresh_token }) {
+  localStorage.setItem("access_token", access_token || "");
+  if (refresh_token != null) localStorage.setItem("refresh_token", refresh_token || "");
+}
+
+export function clearTokens() {
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("refresh_token");
+}
+
+export const api = {
+  search: (q, page = 1, sort = "") =>
+    http(`/api/search?q=${encodeURIComponent(q || "")}&page=${page}&sort=${encodeURIComponent(sort)}`),
+  vehicleByVin: (vin) => http(`/api/vehicles/${encodeURIComponent(vin)}`),
+  myInventory: () => http(`/api/vehicles?mine=1`),
+  upsertVehicle: (payload) => http(`/api/vehicles`, { method: "POST", body: JSON.stringify(payload) }),
+  markSold: (vin, note = "") => http(`/api/vehicles/${encodeURIComponent(vin)}/sold`, { method: "POST", body: JSON.stringify({ note }) }),
+  unmarkSold: (vin) => http(`/api/vehicles/${encodeURIComponent(vin)}/sold`, { method: "DELETE" }),
+  deleteVehicle: (vin) => http(`/api/vehicles/${encodeURIComponent(vin)}`, { method: "DELETE" }),
+  createLead: (payload) => http(`/api/leads`, { method: "POST", body: JSON.stringify(payload) }),
+  listLeads: () => http(`/api/leads`),
+  setLeadStatus: (id, status) => http(`/api/leads/${id}`, { method: "PATCH", body: JSON.stringify({ status }) })
+};
