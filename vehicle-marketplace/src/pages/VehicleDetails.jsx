@@ -1,66 +1,154 @@
-import React from "react";
-import { useParams } from "react-router-dom";
-import { api } from "../lib/api.js";
+import React, { useEffect, useState } from "react";
+import { useParams, Link } from "react-router-dom";
+import { http } from "../lib/api.js";
 
 export default function VehicleDetails() {
   const { vin } = useParams();
-  const [vehicle, setVehicle] = React.useState(null);
-  const [loading, setLoading] = React.useState(true);
-  const [lead, setLead] = React.useState({ name: "", email: "", phone: "", message: "" });
-  const [sent, setSent] = React.useState("");
+  const [vehicle, setVehicle] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [message, setMessage] = useState("");
+  const [sent, setSent] = useState(false);
 
-  React.useEffect(() => {
-    let on = true;
+  useEffect(() => {
+    let mounted = true;
     setLoading(true);
-    api.vehicleByVin(vin)
-      .then((v) => { if (on) setVehicle(v); })
-      .catch(() => { if (on) setVehicle(null); })
-      .finally(() => { if (on) setLoading(false); });
-    return () => { on = false; };
+    setErr("");
+    http
+      .get(`/vehicles/${encodeURIComponent(vin)}`)
+      .then((res) => {
+        if (mounted) setVehicle(res.data);
+      })
+      .catch(() => setErr("Could not load vehicle."))
+      .finally(() => setLoading(false));
+    return () => {
+      mounted = false;
+    };
   }, [vin]);
 
-  async function submitLead(e) {
+  function submitLead(e) {
     e.preventDefault();
-    setSent("");
-    await api.createLead({ vin, ...lead });
-    setLead({ name: "", email: "", phone: "", message: "" });
-    setSent("Thanks! The dealer will contact you soon.");
+    setErr("");
+    setSent(false);
+    http
+      .post("/leads", {
+        vin,
+        name,
+        email,
+        phone,
+        message,
+      })
+      .then(() => {
+        setSent(true);
+        setName("");
+        setEmail("");
+        setPhone("");
+        setMessage("");
+      })
+      .catch(() => setErr("Failed to submit. Please try again."));
   }
 
   if (loading) return <div style={{ padding: 24 }}>Loading…</div>;
+  if (err) return <div style={{ padding: 24 }}>{err}</div>;
   if (!vehicle) return <div style={{ padding: 24 }}>Not found</div>;
 
   return (
     <div style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
-      <h2 style={{ marginBottom: 8 }}>{vehicle.year} {vehicle.make} {vehicle.model} {vehicle.trim || ""}</h2>
-      <div style={{ marginBottom: 16, color: "#555" }}>
-        VIN {vehicle.vin} • {vehicle.mileage?.toLocaleString?.() || vehicle.mileage} miles • ${vehicle.price?.toLocaleString?.() || vehicle.price}
+      <div style={{ marginBottom: 12 }}>
+        <Link to="/search">← Back to Search</Link>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+      <h2 style={{ margin: "8px 0" }}>
+        {vehicle.year} {vehicle.make} {vehicle.model} {vehicle.trim || ""}
+      </h2>
+      <div style={{ marginBottom: 16, color: "#555" }}>VIN: {vin}</div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 24 }}>
         <div>
-          <div style={{ border: "1px solid #eee", padding: 16, borderRadius: 8 }}>
-            <h3 style={{ marginTop: 0 }}>Details</h3>
-            <ul style={{ paddingLeft: 18, lineHeight: 1.8 }}>
-              <li>Location: {vehicle.location || "—"}</li>
-              <li>Status: {vehicle.sold ? "Sold" : "In stock"}</li>
-            </ul>
-          </div>
+          <table>
+            <tbody>
+              <tr>
+                <td style={{ padding: "4px 8px" }}>Price</td>
+                <td style={{ padding: "4px 8px", fontWeight: 600 }}>
+                  {vehicle.price ? `$${Number(vehicle.price).toLocaleString()}` : "—"}
+                </td>
+              </tr>
+              <tr>
+                <td style={{ padding: "4px 8px" }}>Mileage</td>
+                <td style={{ padding: "4px 8px" }}>
+                  {vehicle.mileage ? Number(vehicle.mileage).toLocaleString() : "—"}
+                </td>
+              </tr>
+              <tr>
+                <td style={{ padding: "4px 8px" }}>Location</td>
+                <td style={{ padding: "4px 8px" }}>{vehicle.location || "—"}</td>
+              </tr>
+              <tr>
+                <td style={{ padding: "4px 8px" }}>Status</td>
+                <td style={{ padding: "4px 8px" }}>{vehicle.sold ? "Sold" : "In stock"}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
-        <div>
-          <form onSubmit={submitLead} style={{ border: "1px solid #eee", padding: 16, borderRadius: 8 }}>
-            <h3 style={{ marginTop: 0 }}>Contact dealer</h3>
-            <div style={{ display: "grid", gap: 8 }}>
-              <input placeholder="Name" value={lead.name} onChange={(e) => setLead({ ...lead, name: e.target.value })} />
-              <input placeholder="Email" value={lead.email} onChange={(e) => setLead({ ...lead, email: e.target.value })} />
-              <input placeholder="Phone" value={lead.phone} onChange={(e) => setLead({ ...lead, phone: e.target.value })} />
-              <textarea placeholder="Message" rows={4} value={lead.message} onChange={(e) => setLead({ ...lead, message: e.target.value })} />
-              <button type="submit">Send</button>
-              {sent ? <div style={{ color: "green" }}>{sent}</div> : null}
+        <form onSubmit={submitLead} style={{ border: "1px solid #ddd", padding: 16, borderRadius: 6 }}>
+          <h3 style={{ marginTop: 0 }}>Request info</h3>
+
+          {sent && (
+            <div style={{ background: "#e6ffed", padding: 8, marginBottom: 12, borderRadius: 4 }}>
+              Thanks! The dealer has received your request.
             </div>
-          </form>
-        </div>
+          )}
+          {err && (
+            <div style={{ background: "#ffe6e6", padding: 8, marginBottom: 12, borderRadius: 4 }}>
+              {err}
+            </div>
+          )}
+
+          <div style={{ marginBottom: 8 }}>
+            <label style={{ display: "block", marginBottom: 4 }}>Name</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              style={{ width: "100%" }}
+            />
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <label style={{ display: "block", marginBottom: 4 }}>Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              style={{ width: "100%" }}
+            />
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <label style={{ display: "block", marginBottom: 4 }}>Phone</label>
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              style={{ width: "100%" }}
+              placeholder="Optional"
+            />
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: "block", marginBottom: 4 }}>Message</label>
+            <textarea
+              rows={4}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              style={{ width: "100%" }}
+              placeholder="Is it available? Can I schedule a test drive?"
+            />
+          </div>
+
+          <button type="submit">Send</button>
+        </form>
       </div>
     </div>
   );
