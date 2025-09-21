@@ -1,13 +1,16 @@
+// Load environment variables from vehicle-backend/.env
+import "dotenv/config";
+
 import express from "express";
 import cors from "cors";
 import { initDB } from "./db";
 
-// NOTE: these are named exports in your project
+// NOTE: these are named exports in this project
 import { searchRouter } from "./search";
 import { metricsRouter } from "./metrics";
 import { eventsRouter } from "./events";
 
-// Leads router from our new module (default export)
+// Leads router is the default export
 import leadsRouter from "./leads";
 
 const app = express();
@@ -23,7 +26,7 @@ api.use(eventsRouter);
 api.use(leadsRouter);
 app.use("/api", api);
 
-// simple health endpoint
+// health
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
 const PORT = Number(process.env.PORT || 8080);
