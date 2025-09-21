@@ -1,79 +1,37 @@
+// vehicle-marketplace/src/lib/api.js
 const API_BASE =
-  (import.meta.env && import.meta.env.VITE_API_BASE_URL) ||
-  "http://localhost:8080";
+  (import.meta.env.VITE_API_BASE_URL || "http://localhost:8080").replace(/\/$/, "");
 
-const TOKEN_KEYS = { access: "access", refresh: "refresh" };
-
-export function getAccess() {
-  return localStorage.getItem(TOKEN_KEYS.access) || "";
-}
-export function getRefresh() {
-  return localStorage.getItem(TOKEN_KEYS.refresh) || "";
-}
-export function setTokens(access, refresh) {
-  if (access) localStorage.setItem(TOKEN_KEYS.access, access);
-  if (refresh) localStorage.setItem(TOKEN_KEYS.refresh, refresh);
-}
-export function clearTokens() {
-  localStorage.removeItem(TOKEN_KEYS.access);
-  localStorage.removeItem(TOKEN_KEYS.refresh);
+/** Basic JSON fetch helpers */
+async function getJSON(path) {
+  const res = await fetch(`${API_BASE}${path}`);
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(txt || `GET ${path} failed with ${res.status}`);
+  }
+  return res.json();
 }
 
-async function rawFetch(path, opts = {}) {
-  const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
-  const headers = new Headers(opts.headers || {});
-  if (!headers.has("Content-Type") && opts.body) headers.set("Content-Type", "application/json");
-  const access = getAccess();
-  if (access && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${access}`);
-
-  const res = await fetch(url, { ...opts, headers });
-  return res;
-}
-
-/** Fetch with automatic refresh-on-401 (one retry) */
-export async function api(path, opts = {}) {
-  let res = await rawFetch(path, opts);
-  if (res.status !== 401) return res;
-
-  // try refresh once
-  const refresh = getRefresh();
-  if (!refresh) return res;
-
-  const rr = await rawFetch("/api/auth/refresh", {
+async function postJSON(path, body) {
+  const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
-    body: JSON.stringify({ refresh }),
-    headers: { "Content-Type": "application/json" }
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
-
-  if (rr.ok) {
-    const data = await rr.json();
-    if (data.access) {
-      setTokens(data.access, refresh);
-      res = await rawFetch(path, opts); // retry original
-    }
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(txt || `POST ${path} failed with ${res.status}`);
   }
-  return res;
+  return res.json();
 }
 
-export const http = {
-  async get(path) {
-    const r = await api(path, { method: "GET" });
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
-  },
-  async post(path, body) {
-    const r = await api(path, { method: "POST", body: JSON.stringify(body) });
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
-  },
-  async patch(path, body) {
-    const r = await api(path, { method: "PATCH", body: JSON.stringify(body) });
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
-  },
-  async del(path) {
-    const r = await api(path, { method: "DELETE" });
-    if (!r.ok && r.status !== 204) throw new Error(await r.text());
-    return r.status === 204 ? {} : r.json();
-  }
-};
+/** Public API */
+export function fetchVehicleByVin(vin) {
+  // Your backend router is mounted at root: GET /vehicles/:vin
+  return getJSON(`/vehicles/${encodeURIComponent(vin)}`);
+}
+
+export function createLead(payload) {
+  // POST /api/leads  { vin, name, email?, phone?, message? }
+  return postJSON(`/api/leads`, payload);
+}
