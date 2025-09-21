@@ -1,245 +1,111 @@
-// vehicle-marketplace/src/pages/VehicleDetails.jsx
-import React, { useEffect, useMemo, useState } from "react";
-import { useLocation, useParams, Link } from "react-router-dom";
-import { fetchVehicleByVin, createLead } from "../lib/api";
+import React from "react";
+import { useParams, Link } from "react-router-dom";
+import { fetchVehicleByVin, createLead } from "../lib/api.js";
 
-function useVinFromRoute() {
-  const { vin: vinParam } = useParams();
-  const loc = useLocation();
-  const qsVin = new URLSearchParams(loc.search).get("vin");
-  return vinParam || qsVin || "";
-}
+const styles = {
+  wrap: { maxWidth: 960, margin: "2rem auto", padding: "0 1rem" },
+  h1: { fontSize: 22, marginBottom: 8 },
+  row: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginTop: 24 },
+  card: { border: "1px solid #ddd", borderRadius: 8, padding: 16 },
+  label: { display: "block", fontSize: 12, color: "#666", marginBottom: 4 },
+  input: { width: "100%", padding: 8, border: "1px solid #ccc", borderRadius: 6, marginBottom: 10 },
+  btn: { padding: "8px 12px", border: "1px solid #999", borderRadius: 6, background: "#f7f7f7", cursor: "pointer" },
+  table: { width: "100%", borderCollapse: "collapse" },
+  thtd: { borderBottom: "1px solid #eee", padding: "8px 6px", textAlign: "left" },
+  note: { color: "#0a0", marginTop: 8 },
+  err: { color: "#b00", marginTop: 8 }
+};
 
 export default function VehicleDetails() {
-  const vin = useVinFromRoute();
-  const [vehicle, setVehicle] = useState(null);
-  const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadErr, setLoadErr] = useState("");
+  const { vin } = useParams();
+  const [vehicle, setVehicle] = React.useState(null);
+  const [events, setEvents] = React.useState([]);
+  const [lead, setLead] = React.useState({ name: "", email: "", phone: "", message: "" });
+  const [status, setStatus] = React.useState({ ok: "", err: "" });
 
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [message, setMessage] = useState("");
-
-  const [submitState, setSubmitState] = useState({ ok: false, err: "" });
-
-  useEffect(() => {
-    let alive = true;
-    async function run() {
-      setLoading(true);
-      setLoadErr("");
-      try {
-        if (!vin) {
-          setLoadErr("Missing VIN in URL.");
-          return;
-        }
-        const data = await fetchVehicleByVin(vin);
-        // Be tolerant to shape: either {vehicle, events} or a plain object.
-        const v = data?.vehicle ?? data ?? null;
-        const ev = data?.events ?? [];
-        if (alive) {
-          setVehicle(v);
-          setEvents(Array.isArray(ev) ? ev : []);
-        }
-      } catch (e) {
-        if (alive) setLoadErr(String(e?.message || e));
-      } finally {
-        if (alive) setLoading(false);
-      }
-    }
-    run();
-    return () => {
-      alive = false;
-    };
+  React.useEffect(() => {
+    let isMounted = true;
+    fetchVehicleByVin(vin).then((data) => {
+      if (!isMounted) return;
+      setVehicle(data?.vehicle || null);
+      setEvents(data?.events || []);
+    }).catch((e) => setStatus({ ok: "", err: e.message }));
+    return () => { isMounted = false; };
   }, [vin]);
 
-  const title = useMemo(() => {
-    if (!vehicle) return `Vehicle ${vin}`;
-    const parts = [vehicle.year, vehicle.make, vehicle.model, vehicle.trim]
-      .filter(Boolean)
-      .join(" ");
-    return parts || `Vehicle ${vin}`;
-  }, [vehicle, vin]);
-
-  async function onSubmit(e) {
+  async function submitLead(e) {
     e.preventDefault();
-    setSubmitState({ ok: false, err: "" });
-
-    if (!name.trim()) {
-      setSubmitState({ ok: false, err: "Please enter your name." });
-      return;
-    }
-    if (!email.trim() && !phone.trim()) {
-      setSubmitState({
-        ok: false,
-        err: "Provide at least an email or a phone number.",
-      });
-      return;
-    }
-
+    setStatus({ ok: "", err: "" });
     try {
-      await createLead({
-        vin,
-        name: name.trim(),
-        email: email.trim() || undefined,
-        phone: phone.trim() || undefined,
-        message: message.trim() || undefined,
-      });
-      setSubmitState({ ok: true, err: "" });
-      setMessage("");
+      await createLead({ vin, ...lead });
+      setStatus({ ok: "Request sent. The dealer will contact you.", err: "" });
+      setLead({ name: "", email: "", phone: "", message: "" });
     } catch (err) {
-      setSubmitState({ ok: false, err: String(err?.message || err) });
+      setStatus({ ok: "", err: err.message });
     }
   }
 
   return (
-    <div style={{ maxWidth: 980, margin: "0 auto", padding: "2rem 1rem" }}>
-      <nav style={{ marginBottom: "1rem" }}>
+    <div style={styles.wrap}>
+      <div style={{ marginBottom: 12 }}>
         <Link to="/">Vehicle Home</Link>
-        {" · "}
-        <Link to="/search">Search</Link>
-      </nav>
+      </div>
+      <h1 style={styles.h1}>Vehicle Details</h1>
 
-      <h1 style={{ margin: 0 }}>{title}</h1>
-      <div style={{ color: "#666", marginBottom: "1.25rem" }}>VIN: {vin}</div>
+      {!vehicle && <div>Loading…</div>}
 
-      {loading && <div>Loading vehicle…</div>}
-      {loadErr && (
-        <div style={{ color: "crimson", marginBottom: "1rem" }}>{loadErr}</div>
-      )}
-
-      {/* Simple vehicle summary if present */}
       {vehicle && (
-        <div
-          style={{
-            border: "1px solid #eee",
-            borderRadius: 8,
-            padding: "1rem",
-            marginBottom: "1.5rem",
-          }}
-        >
-          <div>
-            <strong>Price:</strong>{" "}
-            {vehicle.price ? `$${Number(vehicle.price).toLocaleString()}` : "—"}
+        <div style={styles.row}>
+          <div style={styles.card}>
+            <div><strong>{vehicle.year} {vehicle.make} {vehicle.model}</strong></div>
+            <div>VIN: {vehicle.vin}</div>
+            <div>Trim: {vehicle.trim || "—"}</div>
+            <div>Mileage: {vehicle.mileage?.toLocaleString?.() || vehicle.mileage || "—"}</div>
+            <div>Price: {vehicle.price ? `$${Number(vehicle.price).toLocaleString()}` : "—"}</div>
+            <div>Location: {vehicle.location || "—"}</div>
           </div>
-          <div>
-            <strong>Mileage:</strong>{" "}
-            {vehicle.mileage ? Number(vehicle.mileage).toLocaleString() : "—"}
-          </div>
-          <div>
-            <strong>Location:</strong> {vehicle.location || "—"}
-          </div>
-          {vehicle.status && (
-            <div>
-              <strong>Status:</strong> {vehicle.status}
-            </div>
-          )}
+
+          <form onSubmit={submitLead} style={styles.card}>
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>Contact dealer</div>
+            <label style={styles.label}>Name</label>
+            <input style={styles.input} value={lead.name} onChange={(e) => setLead({ ...lead, name: e.target.value })} required />
+            <label style={styles.label}>Email</label>
+            <input style={styles.input} type="email" value={lead.email} onChange={(e) => setLead({ ...lead, email: e.target.value })} />
+            <label style={styles.label}>Phone</label>
+            <input style={styles.input} value={lead.phone} onChange={(e) => setLead({ ...lead, phone: e.target.value })} />
+            <label style={styles.label}>Message</label>
+            <textarea style={{ ...styles.input, minHeight: 80 }} value={lead.message} onChange={(e) => setLead({ ...lead, message: e.target.value })} />
+            <button style={styles.btn} type="submit">Send</button>
+            {status.ok && <div style={styles.note}>{status.ok}</div>}
+            {status.err && <div style={styles.err}>{status.err}</div>}
+          </form>
         </div>
       )}
 
-      {/* Contact Seller */}
-      <section
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 8,
-          padding: "1rem",
-          marginBottom: "1.5rem",
-        }}
-      >
-        <h2 style={{ marginTop: 0 }}>Contact seller</h2>
-        <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.75rem" }}>
-          <div>
-            <label style={{ display: "block", fontSize: 14, color: "#444" }}>
-              Your name
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Jane Buyer"
-              required
-              style={{ width: "100%", padding: "8px" }}
-            />
-          </div>
-          <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "1fr 1fr" }}>
-            <div>
-              <label style={{ display: "block", fontSize: 14, color: "#444" }}>
-                Email
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="jane@example.com"
-                style={{ width: "100%", padding: "8px" }}
-              />
-            </div>
-            <div>
-              <label style={{ display: "block", fontSize: 14, color: "#444" }}>
-                Phone
-              </label>
-              <input
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="555-123-4567"
-                style={{ width: "100%", padding: "8px" }}
-              />
-            </div>
-          </div>
-          <div>
-            <label style={{ display: "block", fontSize: 14, color: "#444" }}>
-              Message
-            </label>
-            <textarea
-              rows={4}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="I'm interested in this vehicle. Is it still available?"
-              style={{ width: "100%", padding: "8px" }}
-            />
-          </div>
-
-          {submitState.err && (
-            <div style={{ color: "crimson" }}>{submitState.err}</div>
-          )}
-          {submitState.ok && (
-            <div style={{ color: "green" }}>
-              Thanks! Your inquiry was sent to the dealer.
-            </div>
-          )}
-
-          <div>
-            <button type="submit">Send inquiry</button>
-          </div>
-        </form>
-      </section>
-
-      {/* Recent events, if any */}
-      {events?.length > 0 && (
-        <section
-          style={{
-            border: "1px solid #eee",
-            borderRadius: 8,
-            padding: "1rem",
-          }}
-        >
-          <h3 style={{ marginTop: 0 }}>History</h3>
-          <ul>
-            {events.slice(0, 20).map((e, i) => (
-              <li key={i}>
-                <span style={{ color: "#666" }}>
-                  {e?.ts ? new Date(e.ts).toLocaleString() : "—"}
-                </span>
-                {" · "}
-                <span>{e?.type || e?.event || "event"}</span>
-                {e?.note ? ` — ${e.note}` : ""}
-              </li>
+      <div style={{ ...styles.card, marginTop: 24 }}>
+        <div style={{ fontWeight: 600, marginBottom: 8 }}>History</div>
+        <table style={styles.table}>
+          <thead>
+            <tr>
+              <th style={styles.thtd}>Date</th>
+              <th style={styles.thtd}>Event</th>
+              <th style={styles.thtd}>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {events.map((ev, i) => (
+              <tr key={i}>
+                <td style={styles.thtd}>{new Date(ev.ts || ev.created_at || Date.now()).toLocaleString()}</td>
+                <td style={styles.thtd}>{ev.type || ev.event || "event"}</td>
+                <td style={styles.thtd}>{ev.note || ev.details || "—"}</td>
+              </tr>
             ))}
-          </ul>
-        </section>
-      )}
+            {events.length === 0 && (
+              <tr><td style={styles.thtd} colSpan={3}>No events</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
