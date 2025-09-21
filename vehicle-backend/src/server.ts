@@ -11,8 +11,21 @@ const app = express();
 const PORT = Number(process.env.PORT || 10000);
 const HOST = process.env.HOST || "0.0.0.0";
 
+app.use(
+  cors({
+    origin: [
+      /\.vercel\.app$/,
+      "https://vehicle-home-mvp.vercel.app",
+      "http://localhost:5173",
+      "http://localhost:3000",
+    ],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: false,
+  })
+);
+app.options("*", cors());
 app.use(express.json());
-app.use(cors({ origin: true, credentials: true }));
 
 app.use("/api", searchRouter);
 app.use("/api", metricsRouter);

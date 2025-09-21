@@ -1,33 +1,23 @@
-const BASE =
-  (import.meta && import.meta.env && import.meta.env.VITE_API_BASE_URL) ||
-  "https://vehicle-home-mvp.onrender.com";
+const BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 
-async function request(method, path, body, params) {
-  let url = BASE + path;
-  if (params) {
-    const usp = new URLSearchParams(params);
-    url += "?" + usp.toString();
+export function apiUrl(path) {
+  const p = path.startsWith("/") ? path : `/${path}`;
+  return `${BASE}${p}`;
+}
+export const api = apiUrl;
+
+export async function http(method, path, body) {
+  const m = (method || "get").toLowerCase();
+  const opts = { method: m.toUpperCase(), headers: {} };
+  if (m !== "get" && m !== "head") {
+    opts.headers["Content-Type"] = "application/json";
+    if (body !== undefined) opts.body = JSON.stringify(body);
   }
-  const res = await fetch(url, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    credentials: "omit",
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) throw new Error(await res.text());
+  const res = await fetch(apiUrl(path), opts);
+  if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
 }
 
-export const http = {
-  get: (path, params) => request("GET", path, null, params),
-  post: (path, body) => request("POST", path, body),
-  put: (path, body) => request("PUT", path, body),
-  del: (path) => request("DELETE", path),
-};
-
-export const api = http;
-export function apiUrl(p) { return BASE + p; }
-export function setTokens() {}
 export function clearTokens() {
   localStorage.removeItem("accessToken");
   localStorage.removeItem("refreshToken");
