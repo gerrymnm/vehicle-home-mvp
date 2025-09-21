@@ -1,246 +1,50 @@
-/**
- * Vehicle search & write APIs
- * - Public: GET /api/search, GET /api/vehicles, GET /api/vehicles/:vin
- * - Auth'd dealers/consumers/admins:
- *   POST /api/vehicles
- *   PATCH /api/vehicles/:vin
- *   POST  /api/vehicles/:vin/sold
- *   DELETE /api/vehicles/:vin
- *   POST  /api/vehicles/import   (bulk import)
- */
 import { Router, Request, Response } from "express";
-import {
-  queryVehiclesAdvanced,
-  getVehicle,
-  upsertVehicle,
-  patchVehicle,
-  deleteVehicle,
-  markSold,
-} from "./store/sqlstore";
-import type { Vehicle } from "./store/sqlstore";
-import { requireAuth } from "./auth_mw";
+import { pool } from "./db";
 
-export const searchRouter = Router();
+const router = Router();
 
-/* ----------------- helpers ----------------- */
-function num(v: unknown): number | undefined {
-  if (v === undefined || v === null || v === "") return undefined;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : undefined;
-}
-function bool(v: unknown): boolean | undefined {
-  if (v === undefined || v === null || v === "") return undefined;
-  if (typeof v === "boolean") return v;
-  const s = String(v).toLowerCase();
-  if (["true", "1", "yes", "y"].includes(s)) return true;
-  if (["false", "0", "no", "n"].includes(s)) return false;
-  return undefined;
-}
+router.get("/search", async (req: Request, res: Response) => {
+  try {
+    const q = String(req.query.q ?? "").trim();
+    const page = Math.max(parseInt(String(req.query.page ?? "1"), 10) || 1, 1);
+    const pageSize = Math.min(Math.max(parseInt(String(req.query.pageSize ?? "20"), 10) || 20, 1), 50);
+    const offset = (page - 1) * pageSize;
 
-/* --------------- public search --------------- */
-searchRouter.get("/search", async (req: Request, res: Response) => {
-  const results = await queryVehiclesAdvanced({
-    q: (req.query.q as string) ?? "",
-    make: (req.query.make as string) ?? undefined,
-    model: (req.query.model as string) ?? undefined,
-    trim: (req.query.trim as string) ?? undefined,
-    yearMin: num(req.query.yearMin),
-    yearMax: num(req.query.yearMax),
-    priceMin: num(req.query.priceMin),
-    priceMax: num(req.query.priceMax),
-    mileageMin: num(req.query.mileageMin),
-    mileageMax: num(req.query.mileageMax),
-    sort: (req.query.sort as string) ?? undefined,
-    dir: (req.query.dir as "asc" | "desc") ?? "asc",
-    page: num(req.query.page),
-    pageSize: num(req.query.pageSize),
-    includeOutOfStock: bool(req.query.includeOutOfStock),
-  });
-  res.json(results);
+    if (!q) {
+      return res.json({
+        query: { q, dir: "asc", page, pageSize },
+        count: 0,
+        total: 0,
+        totalPages: 0,
+        results: [],
+      });
+    }
+
+    const like = `%${q}%`;
+    const where = `make ILIKE $1 OR model ILIKE $1 OR trim ILIKE $1 OR vin ILIKE $1`;
+    const listSql = `SELECT vin, year, make, model, trim, mileage, price, location FROM vehicles WHERE ${where} ORDER BY year DESC OFFSET $3 LIMIT $2`;
+    const countSql = `SELECT COUNT(*)::int AS c FROM vehicles WHERE ${where}`;
+
+    const [list, count] = await Promise.all([
+      pool.query(listSql, [like, pageSize, offset]),
+      pool.query(countSql, [like]),
+    ]);
+
+    const total = count.rows[0]?.c ?? 0;
+    const totalPages = Math.max(Math.ceil(total / pageSize), 0);
+
+    res.json({
+      query: { q, dir: "asc", page, pageSize },
+      count: list.rowCount,
+      total,
+      totalPages,
+      results: list.rows,
+    });
+  } catch (e) {
+    res.status(500).json({ error: "search_failed" });
+  }
 });
 
-searchRouter.get("/vehicles", async (req: Request, res: Response) => {
-  const results = await queryVehiclesAdvanced({
-    q: (req.query.q as string) ?? "",
-    make: (req.query.make as string) ?? undefined,
-    model: (req.query.model as string) ?? undefined,
-    trim: (req.query.trim as string) ?? undefined,
-    yearMin: num(req.query.yearMin),
-    yearMax: num(req.query.yearMax),
-    priceMin: num(req.query.priceMin),
-    priceMax: num(req.query.priceMax),
-    mileageMin: num(req.query.mileageMin),
-    mileageMax: num(req.query.mileageMax),
-    sort: (req.query.sort as string) ?? undefined,
-    dir: (req.query.dir as "asc" | "desc") ?? "asc",
-    page: num(req.query.page),
-    pageSize: num(req.query.pageSize),
-    includeOutOfStock: bool(req.query.includeOutOfStock),
-  });
-  res.json(results);
-});
+export { router as searchRouter };
+export default router;
 
-searchRouter.get("/vehicles/:vin", async (req: Request, res: Response) => {
-  const v = await getVehicle(req.params.vin);
-  if (!v) return res.status(404).json({ error: "Not found" });
-  res.json(v);
-});
-
-/* --------------- protected writes --------------- */
-searchRouter.post(
-  "/vehicles",
-  requireAuth,
-  async (req: Request, res: Response) => {
-    const payload = req.body as Vehicle;
-    if (!payload?.vin) return res.status(400).json({ error: "VIN is required" });
-
-    if (req.user?.role === "dealer") {
-      payload.dealerId = req.user.dealerId ?? null;
-      payload.ownerUserId = null;
-    } else if (req.user?.role === "consumer") {
-      payload.ownerUserId = req.user.id;
-      payload.dealerId = null;
-      payload.inStock = false;
-    }
-
-    const saved = await upsertVehicle(payload);
-    res.status(201).json(saved);
-  }
-);
-
-searchRouter.patch(
-  "/vehicles/:vin",
-  requireAuth,
-  async (req: Request, res: Response) => {
-    const vin = req.params.vin;
-    const target = await getVehicle(vin);
-    if (!target) return res.status(404).json({ error: "Not found" });
-
-    if (req.user?.role !== "admin") {
-      const ownsAsDealer =
-        req.user?.role === "dealer" && target.dealerId === req.user?.dealerId;
-      const ownsAsConsumer =
-        req.user?.role === "consumer" && target.ownerUserId === req.user?.id;
-      if (!ownsAsDealer && !ownsAsConsumer)
-        return res.status(403).json({ error: "Forbidden" });
-    }
-
-    const updated = await patchVehicle(vin, req.body as Partial<Vehicle>);
-    res.json(updated);
-  }
-);
-
-searchRouter.post(
-  "/vehicles/:vin/sold",
-  requireAuth,
-  async (req: Request, res: Response) => {
-    const vin = req.params.vin;
-    const target = await getVehicle(vin);
-    if (!target) return res.status(404).json({ error: "Not found" });
-
-    if (req.user?.role !== "admin") {
-      const ownsAsDealer =
-        req.user?.role === "dealer" && target.dealerId === req.user?.dealerId;
-      const ownsAsConsumer =
-        req.user?.role === "consumer" && target.ownerUserId === req.user?.id;
-      if (!ownsAsDealer && !ownsAsConsumer)
-        return res.status(403).json({ error: "Forbidden" });
-    }
-
-    const body: any = req.body || {};
-    const note: string | undefined = body.note ? String(body.note) : undefined;
-    const updated = await markSold(vin, note);
-    res.json(updated);
-  }
-);
-
-searchRouter.delete(
-  "/vehicles/:vin",
-  requireAuth,
-  async (req: Request, res: Response) => {
-    const vin = req.params.vin;
-    const target = await getVehicle(vin);
-    if (!target) return res.status(404).json({ error: "Not found" });
-
-    if (req.user?.role !== "admin") {
-      const ownsAsDealer =
-        req.user?.role === "dealer" && target.dealerId === req.user?.dealerId;
-      const ownsAsConsumer =
-        req.user?.role === "consumer" && target.ownerUserId === req.user?.id;
-      if (!ownsAsDealer && !ownsAsConsumer)
-        return res.status(403).json({ error: "Forbidden" });
-    }
-
-    const ok = await deleteVehicle(vin);
-    if (!ok) return res.status(404).json({ error: "Not found" });
-    res.status(204).send();
-  }
-);
-
-/* --------------- bulk import (dealer/admin) --------------- */
-type ImportRow = Partial<Vehicle> & { vin?: string };
-searchRouter.post(
-  "/vehicles/import",
-  requireAuth,
-  async (req: Request, res: Response) => {
-    const body = Array.isArray(req.body?.vehicles) ? req.body.vehicles : req.body;
-    if (!Array.isArray(body)) {
-      return res
-        .status(400)
-        .json({ error: "Expected an array of vehicles or {vehicles: [...]}." });
-    }
-
-    const rows: ImportRow[] = body;
-    const out = {
-      inserted: 0,
-      updated: 0,
-      errors: [] as { vin?: string; error: string }[],
-    };
-
-    for (const raw of rows) {
-      try {
-        const vin = String(raw.vin || "").trim();
-        if (!vin) throw new Error("Missing VIN");
-
-        const payload: Vehicle = {
-          vin,
-          year: Number(raw.year) || new Date().getFullYear(),
-          make: String(raw.make || "").trim(),
-          model: String(raw.model || "").trim(),
-          trim: raw.trim ? String(raw.trim) : undefined,
-          mileage:
-            raw.mileage !== undefined ? Number(raw.mileage) : undefined,
-          price: raw.price !== undefined ? Number(raw.price) : undefined,
-          location: raw.location ? String(raw.location) : undefined,
-          inStock: raw.inStock !== undefined ? Boolean(raw.inStock) : true,
-          dealerId: null,
-          ownerUserId: null,
-        };
-
-        if (req.user?.role === "dealer") {
-          payload.dealerId = req.user.dealerId ?? null;
-          payload.ownerUserId = null;
-        } else if (req.user?.role === "consumer") {
-          // consumers cannot bulk import
-          throw new Error("Forbidden for consumer role");
-        }
-
-        const before = await getVehicle(vin);
-        await upsertVehicle(payload);
-        if (before) out.updated++;
-        else out.inserted++;
-      } catch (e: any) {
-        out.errors.push({
-          vin: (raw && (raw as any).vin) || undefined,
-          error: e?.message || "failed",
-        });
-      }
-    }
-
-    const status = out.errors.length ? 207 /* Multi-Status */ : 201;
-    res.status(status).json(out);
-  }
-);
-
-// NOTE: We intentionally avoid a second export statement like `export { searchRouter }`
-// to prevent "Cannot redeclare exported variable 'searchRouter'" errors.
