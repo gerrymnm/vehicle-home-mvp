@@ -18,6 +18,7 @@ export default function Dealerdashboard() {
   const [form, setForm] = React.useState({
     vin: "", year: "", make: "", model: "", trim: "", price: "", mileage: "", location: ""
   });
+  const [errors, setErrors] = React.useState({});
 
   // inline edit state
   const [editing, setEditing] = React.useState(null); // vin currently editing
@@ -26,6 +27,7 @@ export default function Dealerdashboard() {
   // CSV import preview
   const [csvPreview, setCsvPreview] = React.useState([]);
 
+  /* ---------------- data ---------------- */
   async function load() {
     setLoading(true);
     try {
@@ -40,11 +42,31 @@ export default function Dealerdashboard() {
   }
   React.useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
 
+  /* ---------------- validation ---------------- */
+  function validate(f) {
+    const e = {};
+    if (!f.vin || !String(f.vin).trim()) e.vin = "VIN is required";
+    if (f.year !== "" && !/^\d{4}$/.test(String(f.year))) e.year = "Year must be 4 digits";
+    if (f.price !== "" && isNaN(Number(f.price))) e.price = "Price must be a number";
+    if (f.mileage !== "" && (!/^\d+$/.test(String(f.mileage)))) e.mileage = "Mileage must be an integer";
+    return e;
+  }
+  function onFormChange(name, value) {
+    const next = { ...form, [name]: value };
+    setForm(next);
+    setErrors(validate(next));
+  }
+
+  /* ---------------- create/update (top form) ---------------- */
   async function createVehicle(e) {
     e.preventDefault();
+    const vErr = validate(form);
+    setErrors(vErr);
+    if (Object.keys(vErr).length) return;
+
     setMsg("");
     const payload = {
-      vin: form.vin.trim(),
+      vin: form.vin.trim().toUpperCase(),
       year: form.year ? Number(form.year) : undefined,
       make: form.make.trim(),
       model: form.model.trim(),
@@ -56,6 +78,7 @@ export default function Dealerdashboard() {
     try {
       await http.post("/api/vehicles", payload);
       setForm({ vin:"", year:"", make:"", model:"", trim:"", price:"", mileage:"", location:"" });
+      setErrors({});
       setMsg("Vehicle saved.");
       await load();
     } catch (e2) {
@@ -64,6 +87,7 @@ export default function Dealerdashboard() {
     }
   }
 
+  /* ---------------- inline edit ---------------- */
   function beginEdit(v) {
     setEditing(v.vin);
     setEditRow({
@@ -77,11 +101,17 @@ export default function Dealerdashboard() {
     setEditRow({ price:"", mileage:"", location:"" });
   }
   async function saveEdit(vin) {
+    const patch = {};
+    if (editRow.price !== "") {
+      if (isNaN(Number(editRow.price))) return alert("Price must be a number");
+      patch.price = Number(editRow.price);
+    }
+    if (editRow.mileage !== "") {
+      if (!/^\d+$/.test(String(editRow.mileage))) return alert("Mileage must be an integer");
+      patch.mileage = Number(editRow.mileage);
+    }
+    if (String(editRow.location).trim() !== "") patch.location = String(editRow.location).trim();
     try {
-      const patch = {};
-      if (editRow.price !== "") patch.price = Number(editRow.price);
-      if (editRow.mileage !== "") patch.mileage = Number(editRow.mileage);
-      if (String(editRow.location).trim() !== "") patch.location = String(editRow.location).trim();
       await http.patch(`/api/vehicles/${encodeURIComponent(vin)}`, patch);
       setEditing(null);
       await load();
@@ -90,6 +120,7 @@ export default function Dealerdashboard() {
     }
   }
 
+  /* ---------------- actions ---------------- */
   async function markSold(vin) {
     try {
       await http.post(`/api/vehicles/${encodeURIComponent(vin)}/sold`, { note: "Sold from dashboard" });
@@ -101,11 +132,28 @@ export default function Dealerdashboard() {
 
   async function unmarkSold(vin) {
     try {
-      // toggle back to in stock via PATCH
       await http.patch(`/api/vehicles/${encodeURIComponent(vin)}`, { inStock: true });
       await load();
     } catch {
       alert("Failed to unmark sold");
+    }
+  }
+
+  async function deleteVehicle(vin) {
+    if (!confirm(`Delete vehicle ${vin}? This cannot be undone.`)) return;
+    try {
+      if (typeof http.delete === "function") {
+        await http.delete(`/api/vehicles/${encodeURIComponent(vin)}`);
+      } else if (typeof http.del === "function") {
+        await http.del(`/api/vehicles/${encodeURIComponent(vin)}`);
+      } else {
+        // fallback; most setups won't hit this
+        const url = (import.meta.env?.VITE_API_BASE_URL || "") + `/api/vehicles/${encodeURIComponent(vin)}`;
+        await fetch(url, { method: "DELETE", credentials: "include" });
+      }
+      await load();
+    } catch {
+      alert("Failed to delete vehicle");
     }
   }
 
@@ -117,7 +165,7 @@ export default function Dealerdashboard() {
       skipEmptyLines: true,
       complete: (res) => {
         const rows = res.data.map(r => ({
-          vin: (r.vin || r.VIN || r.Vin || "").trim(),
+          vin: (r.vin || r.VIN || r.Vin || "").trim().toUpperCase(),
           year: r.year || r.Year || "",
           make: r.make || r.Make || "",
           model: r.model || r.Model || "",
@@ -152,6 +200,20 @@ export default function Dealerdashboard() {
     }
   }
 
+  function downloadTemplate() {
+    const header = "vin,year,make,model,trim,price,mileage,location\n";
+    const example = "1C4RJFBG0LC123456,2020,Jeep,Grand Cherokee,Limited,29950,42000,San Rafael, CA\n";
+    const blob = new Blob([header + example], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "inventory_template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const saveDisabled = !!Object.keys(errors).length || !form.vin.trim();
+
   return (
     <section style={{ maxWidth: 1100, margin: "24px auto" }}>
       <h2>Dealer Dashboard</h2>
@@ -161,16 +223,28 @@ export default function Dealerdashboard() {
 
       <h3 style={{ marginTop: 24 }}>Add / Update Vehicle</h3>
       <form onSubmit={createVehicle} style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-        <input placeholder="VIN" value={form.vin} onChange={e => setForm({ ...form, vin: e.target.value })} />
-        <input placeholder="Year" value={form.year} onChange={e => setForm({ ...form, year: e.target.value })} />
-        <input placeholder="Make" value={form.make} onChange={e => setForm({ ...form, make: e.target.value })} />
-        <input placeholder="Model" value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} />
-        <input placeholder="Trim" value={form.trim} onChange={e => setForm({ ...form, trim: e.target.value })} />
-        <input placeholder="Price" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} />
-        <input placeholder="Mileage" value={form.mileage} onChange={e => setForm({ ...form, mileage: e.target.value })} />
-        <input placeholder="Location" value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} />
+        <div>
+          <input placeholder="VIN" value={form.vin} onChange={e => onFormChange("vin", e.target.value)} onBlur={e => onFormChange("vin", e.target.value.toUpperCase())} />
+          {errors.vin && <div style={{ color: "#b00", fontSize: 12 }}>{errors.vin}</div>}
+        </div>
+        <div>
+          <input placeholder="Year" value={form.year} onChange={e => onFormChange("year", e.target.value)} />
+          {errors.year && <div style={{ color: "#b00", fontSize: 12 }}>{errors.year}</div>}
+        </div>
+        <input placeholder="Make" value={form.make} onChange={e => onFormChange("make", e.target.value)} />
+        <input placeholder="Model" value={form.model} onChange={e => onFormChange("model", e.target.value)} />
+        <input placeholder="Trim" value={form.trim} onChange={e => onFormChange("trim", e.target.value)} />
+        <div>
+          <input placeholder="Price" value={form.price} onChange={e => onFormChange("price", e.target.value)} />
+          {errors.price && <div style={{ color: "#b00", fontSize: 12 }}>{errors.price}</div>}
+        </div>
+        <div>
+          <input placeholder="Mileage" value={form.mileage} onChange={e => onFormChange("mileage", e.target.value)} />
+          {errors.mileage && <div style={{ color: "#b00", fontSize: 12 }}>{errors.mileage}</div>}
+        </div>
+        <input placeholder="Location" value={form.location} onChange={e => onFormChange("location", e.target.value)} />
         <div style={{ gridColumn: "1 / -1" }}>
-          <button>Save Vehicle</button>
+          <button disabled={saveDisabled} title={saveDisabled ? "Fix validation errors first" : ""}>Save Vehicle</button>
           <span style={{ marginLeft: 8, color: "#0a0" }}>{msg}</span>
         </div>
       </form>
@@ -179,10 +253,11 @@ export default function Dealerdashboard() {
       <p style={{ opacity: .8, marginTop: -6 }}>
         Headers can be <code>vin,year,make,model,trim,price,mileage,location</code> (case-insensitive).
       </p>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <input type="file" accept=".csv" onChange={e => e.target.files?.[0] && parseCsv(e.target.files[0])} />
         <button disabled={!csvPreview.length} onClick={uploadCsv}>Upload {csvPreview.length ? `(${csvPreview.length})` : ""}</button>
         <button disabled={!csvPreview.length} onClick={() => setCsvPreview([])}>Clear</button>
+        <button onClick={downloadTemplate}>Download template (.csv)</button>
       </div>
       {csvPreview.length > 0 && (
         <div style={{ marginTop: 10, maxHeight: 200, overflow: "auto", border: "1px solid #eee" }}>
@@ -248,11 +323,13 @@ export default function Dealerdashboard() {
                       <>
                         <button onClick={() => beginEdit(v)}>Edit</button>
                         <button onClick={() => markSold(v.vin)} style={{ marginLeft: 6 }}>Mark sold</button>
+                        <button onClick={() => deleteVehicle(v.vin)} style={{ marginLeft: 6 }}>Delete</button>
                       </>
                     )
                   ) : (
                     <>
                       <button onClick={() => unmarkSold(v.vin)}>Unmark sold</button>
+                      <button onClick={() => deleteVehicle(v.vin)} style={{ marginLeft: 6 }}>Delete</button>
                     </>
                   )}
                 </td>
