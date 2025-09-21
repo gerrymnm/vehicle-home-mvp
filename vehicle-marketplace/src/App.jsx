@@ -2,7 +2,7 @@ import React from "react";
 import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import MarketHome from "./pages/MarketHome.jsx";
 import Search from "./pages/Search.jsx";
-import VehicleDetails from "./pages/Vehicledetails.jsx";
+import VehicleDetails from "./pages/VehicleDetails.jsx";
 import Dealerdashboard from "./pages/Dealerdashboard.jsx";
 import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
