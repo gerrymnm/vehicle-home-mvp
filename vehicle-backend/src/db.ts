@@ -1,87 +1,88 @@
-import { Pool } from "pg";
+import { Pool, QueryResult, QueryResultRow } from "pg";
 
-let pool: Pool | null = null;
+const DATABASE_URL = process.env.DATABASE_URL || "";
+if (!DATABASE_URL) {
+  console.warn(
+    "[db] Warning: DATABASE_URL is not set. The server will start but queries will fail."
+  );
+}
 
+const ssl =
+  process.env.PGSSL && process.env.PGSSL !== "0"
+    ? { rejectUnauthorized: false }
+    : undefined;
+
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  ssl,
+});
+
+/** For legacy callers that import { getPool } from "../db" */
 export function getPool(): Pool {
-  if (pool) return pool;
-
-  const connectionString =
-    process.env.DATABASE_URL ||
-    process.env.POSTGRES_URL ||
-    "postgres://postgres:postgres@localhost:5432/vehicle_home";
-
-  // Set PGSSL=1 in .env if using Neon/Supabase/etc.
-  const useSSL = process.env.PGSSL === "1" || process.env.PGSSLMODE === "require";
-  pool = new Pool({
-    connectionString,
-    ssl: useSSL ? { rejectUnauthorized: false } : undefined,
-  });
   return pool;
 }
 
-export async function initDb(): Promise<void> {
-  const db = getPool();
+/** Thin convenience wrapper with correct pg typing */
+export async function query<R extends QueryResultRow = any>(
+  text: string,
+  params?: any[]
+): Promise<QueryResult<R>> {
+  return pool.query<R>(text, params);
+}
 
-  // Core tables
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS dealers (
-      id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
+/** Some modules expect a 'db' with a .query method */
+export const db = { query };
 
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS users (
-      id SERIAL PRIMARY KEY,
-      email TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      role TEXT NOT NULL CHECK (role IN ('admin','dealer','consumer')),
-      dealer_id INTEGER REFERENCES dealers(id) ON DELETE SET NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
-
-  await db.query(`
+/** Create tables if they don't exist */
+export async function initDB() {
+  // Vehicles
+  await query(`
     CREATE TABLE IF NOT EXISTS vehicles (
       vin TEXT PRIMARY KEY,
-      year INTEGER NOT NULL,
-      make TEXT NOT NULL,
-      model TEXT NOT NULL,
+      year INT,
+      make TEXT,
+      model TEXT,
       trim TEXT,
-      mileage INTEGER,
-      price INTEGER,
+      price NUMERIC,
+      mileage INT,
       location TEXT,
-      in_stock BOOLEAN NOT NULL DEFAULT TRUE,
-      dealer_id INTEGER REFERENCES dealers(id) ON DELETE SET NULL,
-      owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL
+      dealer_id INT,
+      dealer_name TEXT,
+      dealer_email TEXT,
+      in_stock BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT now(),
+      updated_at TIMESTAMPTZ DEFAULT now()
     );
   `);
 
-  await db.query(`
+  // Events
+  await query(`
     CREATE TABLE IF NOT EXISTS events (
-      id TEXT PRIMARY KEY,
-      vin TEXT NOT NULL REFERENCES vehicles(vin) ON DELETE CASCADE,
+      id BIGSERIAL PRIMARY KEY,
+      vin TEXT NOT NULL,
       type TEXT NOT NULL,
-      timestamp TIMESTAMPTZ NOT NULL,
       note TEXT,
-      payload JSONB
+      at TIMESTAMPTZ DEFAULT now()
     );
-    CREATE INDEX IF NOT EXISTS idx_events_vin_ts ON events(vin, timestamp DESC);
   `);
+  await query(`CREATE INDEX IF NOT EXISTS events_vin_idx ON events (vin);`);
 
-  // Seed a few vehicles if empty
-  const { rows } = await db.query<{ c: number }>(`SELECT COUNT(*)::int AS c FROM vehicles;`);
-  if (rows[0].c === 0) {
-    await db.query(
-      `
-      INSERT INTO vehicles (vin, year, make, model, trim, mileage, price, location, in_stock)
-      VALUES
-      ('JM1BPBLL9M1300001', 2021, 'Mazda', 'Mazda3', 'Preferred', 24500, 20995, 'Marin County, CA', TRUE),
-      ('5J6TF3H33CL003984', 2012, 'Honda', 'Accord',  'EX',       98650,  9995, 'South San Francisco, CA', TRUE),
-      ('3MZBPACL4PM300002', 2023, 'Mazda', 'Mazda3', 'Select',     5800,  23950, 'Bay Area, CA', TRUE)
-      ON CONFLICT (vin) DO NOTHING;
-    `
+  // Leads
+  await query(`
+    CREATE TABLE IF NOT EXISTS leads (
+      id BIGSERIAL PRIMARY KEY,
+      vin TEXT NOT NULL,
+      vehicle_title TEXT,
+      dealer_id INT,
+      name TEXT NOT NULL,
+      email TEXT,
+      phone TEXT,
+      message TEXT,
+      source TEXT,
+      status TEXT DEFAULT 'new',
+      created_at TIMESTAMPTZ DEFAULT now()
     );
-  }
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS leads_dealer_idx ON leads (dealer_id, created_at DESC);`);
+  await query(`CREATE INDEX IF NOT EXISTS leads_vin_idx ON leads (vin, created_at DESC);`);
 }
