@@ -1,16 +1,19 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
-import { AuthProvider } from "./lib/auth.jsx";
 
-const root = createRoot(document.getElementById("root"));
-root.render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </BrowserRouter>
-  </React.StrictMode>
-);
+const el = document.getElementById("root");
+
+try {
+  const root = createRoot(el);
+  root.render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
+} catch (e) {
+  console.error(e);
+  if (el) {
+    el.innerHTML = `<pre style="white-space:pre-wrap">${String(e)}</pre>`;
+  }
+}
