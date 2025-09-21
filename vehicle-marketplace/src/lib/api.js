@@ -11,7 +11,7 @@ async function request(method, path, body, params) {
   const res = await fetch(url, {
     method,
     headers: body ? { "Content-Type": "application/json" } : undefined,
-    credentials: "include",
+    credentials: "omit",
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) throw new Error(await res.text());

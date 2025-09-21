@@ -1,36 +1,48 @@
-import "dotenv/config";
 import express from "express";
 import cors from "cors";
-
-import leadsRouter from "./leads";
+import cookieParser from "cookie-parser";
+import morgan from "morgan";
 import { initDB } from "./db";
-
-// Your feature routers export **named** routers; import them as named:
-import { searchRouter } from "./search";
-import { metricsRouter } from "./metrics";
-import { eventsRouter } from "./events";
+import searchRouter from "./search";
+import metricsRouter from "./metrics";
+import eventsRouter from "./events";
+import leadsRouter from "./leads";
 
 const app = express();
 
-app.use(cors());
+const allowlist = [
+  "http://localhost:5173",
+  "https://vehicle-home-mvp.vercel.app",
+];
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (allowlist.includes(origin)) return cb(null, true);
+      return cb(null, false);
+    },
+    credentials: true,
+  })
+);
+app.options("*", cors());
+
+app.use(morgan("tiny"));
 app.use(express.json());
+app.use(cookieParser());
 
-// Health
-app.get("/healthz", (_req, res) => res.json({ ok: true }));
+app.get("/health", (_req, res) => res.json({ ok: true }));
 
-// Leads API
+app.use("/api/search", searchRouter);
+app.use("/api/metrics", metricsRouter);
+app.use("/api/events", eventsRouter);
 app.use("/api/leads", leadsRouter);
-
-// Existing feature routes (paths are defined inside each file)
-app.use("/", searchRouter);
-app.use("/", metricsRouter);
-app.use("/", eventsRouter);
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || "0.0.0.0";
 
 async function main() {
-  await initDB(); // ensure tables exist before serving traffic
+  await initDB();
   app.listen(PORT, HOST, () => {
     console.log(`[backend] listening on http://${HOST}:${PORT}`);
   });
