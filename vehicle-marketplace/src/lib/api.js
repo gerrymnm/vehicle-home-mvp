@@ -18,6 +18,12 @@ export async function http(method, path, body) {
   return res.json();
 }
 
+export function setTokens({ accessToken, refreshToken, role } = {}) {
+  if (accessToken != null) localStorage.setItem("accessToken", accessToken);
+  if (refreshToken != null) localStorage.setItem("refreshToken", refreshToken);
+  if (role != null) localStorage.setItem("role", role);
+}
+
 export function clearTokens() {
   localStorage.removeItem("accessToken");
   localStorage.removeItem("refreshToken");
