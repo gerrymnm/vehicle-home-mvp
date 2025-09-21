@@ -1,46 +1,50 @@
-const BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const BASE =
+  (typeof import !== "undefined" &&
+    import.meta &&
+    import.meta.env &&
+    import.meta.env.VITE_API_BASE_URL) ||
+  (typeof window !== "undefined" && window.__BASE__) ||
+  "https://vehicle-home-mvp.onrender.com";
 
-let tokenCache = {
-  accessToken: localStorage.getItem('accessToken') || '',
-  refreshToken: localStorage.getItem('refreshToken') || '',
-  role: localStorage.getItem('role') || '',
-};
-
-function authHeader() {
-  return tokenCache.accessToken ? { Authorization: `Bearer ${tokenCache.accessToken}` } : {};
+async function get(path, params) {
+  const url = new URL(BASE + path);
+  if (params) for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  const res = await fetch(url.toString(), { credentials: "include" });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
-async function request(method, path, body) {
-  const r = await fetch(`${BASE}${path}`, {
-    method,
-    headers: { 'Content-Type': 'application/json', ...authHeader() },
-    body: body ? JSON.stringify(body) : undefined,
+async function post(path, body) {
+  const res = await fetch(BASE + path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(body),
   });
-  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-  if (r.status === 204) return {};
-  const ct = r.headers.get('content-type') || '';
-  return ct.includes('application/json') ? r.json() : r.text();
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
-async function get(path) { return request('GET', path); }
-async function post(path, body) { return request('POST', path, body); }
-async function put(path, body) { return request('PUT', path, body); }
-async function del(path) { return request('DELETE', path); }
-
-export function setTokens({ accessToken = '', refreshToken = '', role = '' } = {}) {
-  tokenCache = { accessToken, refreshToken, role };
-  if (accessToken) localStorage.setItem('accessToken', accessToken); else localStorage.removeItem('accessToken');
-  if (refreshToken) localStorage.setItem('refreshToken', refreshToken); else localStorage.removeItem('refreshToken');
-  if (role) localStorage.setItem('role', role); else localStorage.removeItem('role');
+async function put(path, body) {
+  const res = await fetch(BASE + path, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
-export function clearTokens() {
-  tokenCache = { accessToken: '', refreshToken: '', role: '' };
-  localStorage.removeItem('accessToken');
-  localStorage.removeItem('refreshToken');
-  localStorage.removeItem('role');
+async function del(path) {
+  const res = await fetch(BASE + path, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
 export const http = { get, post, put, del };
 export const api = http;
-export function apiUrl(path) { return `${BASE}${path}`; }
+export function apiUrl(p) { return BASE + p; }

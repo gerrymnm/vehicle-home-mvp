@@ -2,63 +2,67 @@ import React from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { http } from "../lib/api.js";
 
+const styles = {
+  row: { padding: "10px 0", borderBottom: "1px solid #eee" },
+  badge: { fontSize: 12, padding: "2px 6px", border: "1px solid #ccc", borderRadius: 4, marginLeft: 8 },
+};
+
 export default function Search() {
-  const [params, setParams] = useSearchParams();
-  const navigate = useNavigate();
-  const [q, setQ] = React.useState(params.get("q") || "");
-  const [rows, setRows] = React.useState([]);
+  const [sp, setSp] = useSearchParams();
+  const nav = useNavigate();
+  const q = sp.get("q") || "";
+  const page = Number(sp.get("page") || 1);
+  const [state, setState] = React.useState({ items: [], total: 0, error: "" });
   const [loading, setLoading] = React.useState(false);
-  const [err, setErr] = React.useState("");
+
+  React.useEffect(() => {
+    let on = true;
+    (async () => {
+      try {
+        setLoading(true);
+        const data = await http.get("/api/search", { q, page, pageSize: 20 });
+        if (!on) return;
+        setState({ items: data.results || [], total: data.total || 0, error: "" });
+      } catch (e) {
+        if (!on) return;
+        setState({ items: [], total: 0, error: String(e.message || e) });
+      } finally {
+        if (on) setLoading(false);
+      }
+    })();
+    return () => { on = false; };
+  }, [q, page]);
 
   function onSubmit(e) {
     e.preventDefault();
-    const next = new URLSearchParams(params);
-    if (q) next.set("q", q); else next.delete("q");
-    navigate(`/search?${next.toString()}`);
+    const input = new FormData(e.currentTarget).get("q") || "";
+    setSp({ q: input, page: "1" });
   }
 
-  React.useEffect(() => {
-    const query = params.get("q") || "";
-    const page = Number(params.get("page") || 1);
-    const size = Number(params.get("size") || 20);
-    const sort = params.get("sort") || "recent";
-    setLoading(true);
-    setErr("");
-    http.get(`/search?q=${encodeURIComponent(query)}&page=${page}&size=${size}&sort=${encodeURIComponent(sort)}`)
-      .then(data => setRows(Array.isArray(data.rows) ? data.rows : (Array.isArray(data) ? data : [])))
-      .catch(e => { setErr(String(e)); setRows([]); })
-      .finally(() => setLoading(false));
-  }, [params]);
-
   return (
-    <div style={{maxWidth:900, margin:"40px auto"}}>
+    <div style={{ maxWidth: 900, margin: "0 auto" }}>
       <h2>Find your next vehicle</h2>
-      <form onSubmit={onSubmit} style={{display:"flex", gap:8}}>
-        <input
-          value={q}
-          onChange={e=>setQ(e.target.value)}
-          placeholder="Search by make, model, VIN…"
-          style={{flex:1, padding:8}}
-        />
+      <form onSubmit={onSubmit} style={{ display: "flex", gap: 8 }}>
+        <input name="q" defaultValue={q} style={{ flex: 1 }} placeholder="Search by make, model, VIN…" />
         <button>Search</button>
       </form>
 
-      {loading && <p style={{marginTop:16}}>Searching…</p>}
-      {err && <p style={{marginTop:16, color:"crimson"}}>{err}</p>}
+      {loading && <p>Loading…</p>}
+      {state.error && <p style={{ color: "red" }}>Error: {state.error}</p>}
+      {!loading && !state.error && state.items.length === 0 && <p>No results.</p>}
 
-      <div style={{marginTop:24, display:"grid", gap:12}}>
-        {rows.map(v => (
-          <div key={v.vin} style={{border:"1px solid #ddd", padding:12, borderRadius:8}}>
-            <div style={{fontWeight:600}}>{[v.year, v.make, v.model, v.trim].filter(Boolean).join(" ")}</div>
-            <div>VIN: {v.vin}</div>
-            <div>Price: {v.price ? `$${Number(v.price).toLocaleString()}` : "—"}</div>
-            <div>Mileage: {v.mileage ? Number(v.mileage).toLocaleString() : "—"}</div>
-            <div style={{marginTop:8}}>
-              <Link to={`/vehicles/${encodeURIComponent(v.vin)}`}>View details</Link>
+      <div>
+        {state.items.map(v => (
+          <div key={v.vin} style={styles.row}>
+            <div>
+              <Link to={`/vehicles/${encodeURIComponent(v.vin)}`}>{v.year} {v.make} {v.model} {v.trim || ""}</Link>
+              {v.sold ? <span style={styles.badge}>Sold</span> : null}
+            </div>
+            <div style={{ fontSize: 13, color: "#666" }}>
+              VIN: {v.vin} • {v.mileage?.toLocaleString?.() || v.mileage || "—"} miles • {v.location || "—"}
             </div>
           </div>
         ))}
-        {!loading && !err && rows.length === 0 && <p>No results.</p>}
       </div>
     </div>
   );
