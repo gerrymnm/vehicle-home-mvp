@@ -1,27 +1,14 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "CommonJS",
-    "moduleResolution": "Node",
+    "module": "commonjs",
     "rootDir": "src",
     "outDir": "dist",
-    "strict": true,
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true,
     "resolveJsonModule": true,
-    "types": ["node"],
-    "typeRoots": ["./node_modules/@types", "../node_modules/@types"]
+    "strict": true,
+    "skipLibCheck": true
   },
-  "files": [
-    "src/server.ts",
-    "src/search.ts",
-    "src/events.ts",
-    "src/metrics.ts",
-    "src/db.ts",
-    "src/auth.ts",
-    "src/auth_mw.ts",
-    "src/store/sqlstore.ts",
-    "src/types/shims.d.ts"
-  ]
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules"]
 }
