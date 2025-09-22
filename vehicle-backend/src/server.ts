@@ -8,7 +8,6 @@ import metricsRouter from "./metrics";
 import eventsRouter from "./events";
 import leadsRouter from "./leads";
 import vehiclesRouter from "./vehicles";
-import cors from "cors";
 
 const PORT = Number(process.env.PORT || 10000);
 const HOST = process.env.HOST || "0.0.0.0";
