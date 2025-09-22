@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useParams, useLocation } from "react-router-dom";
-import { http } from "../lib/api.js";
+import { apiUrl } from "../lib/api.js";
 
 export default function VehicleHome() {
   const { vin: vinFromPath } = useParams();
@@ -18,7 +18,11 @@ export default function VehicleHome() {
         setError("");
         setVehicle(null);
         if (!vin) return;
-        const res = await http.get(`/api/search?q=${encodeURIComponent(vin)}`);
+        const res = await fetch(
+          apiUrl(`/api/search?q=${encodeURIComponent(vin)}`),
+          { credentials: "omit" }
+        );
+        if (!res.ok) throw new Error(`Search failed (${res.status})`);
         const data = await res.json();
         const v = data?.results?.[0] || null;
         if (!v) {
@@ -45,7 +49,12 @@ export default function VehicleHome() {
     };
     try {
       setSending(true);
-      const res = await http.post("/api/leads", payload);
+      const res = await fetch(apiUrl("/api/leads"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "omit",
+        body: JSON.stringify(payload),
+      });
       if (!res.ok) throw new Error("Failed to submit lead");
       alert("Thanks! Your message was sent.");
       e.currentTarget.reset();
