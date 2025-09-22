@@ -5,101 +5,69 @@ import { http } from "../lib/api.js";
 export default function VehicleHome() {
   const { vin } = useParams();
   const [vehicle, setVehicle] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    let dead = false;
-    async function load() {
-      setLoading(true);
+    let mounted = true;
+    (async () => {
       setError("");
+      setVehicle(null);
       try {
-        const res = await http.get(`/api/search?q=${encodeURIComponent(vin)}`);
-        const match =
-          res?.results?.find(
-            (v) => String(v.vin).toUpperCase() === String(vin).toUpperCase()
-          ) || null;
-        if (!dead) setVehicle(match);
-        if (!dead && !match) setError("Not found");
+        const data = await http.get(`/api/search?q=${encodeURIComponent(vin)}`);
+        const v =
+          (data.results || []).find((r) => r.vin === vin) ||
+          (data.results || [])[0];
+        if (!v) throw new Error("not found");
+        if (mounted) setVehicle(v);
       } catch (e) {
-        if (!dead) setError("Failed to load vehicle");
-      } finally {
-        if (!dead) setLoading(false);
+        if (mounted) setError("Failed to load vehicle");
       }
-    }
-    load();
+    })();
     return () => {
-      dead = true;
+      mounted = false;
     };
   }, [vin]);
 
-  return (
-    <div style={{ padding: 16, maxWidth: 980, margin: "0 auto" }}>
-      <small>Secured on blockchain</small>
-      <div style={{ margin: "12px 0" }}>
-        <Link to={`/search?q=${vin}`}>← Back to search</Link>
+  if (error)
+    return (
+      <div style={{ padding: 24 }}>
+        <p style={{ fontSize: 12, color: "#555" }}>Secured on blockchain</p>
+        <Link to="/search">← Back to search</Link>
+        <p style={{ color: "#c00", marginTop: 12 }}>Error: {error}</p>
       </div>
+    );
 
-      {loading && <div>Loading…</div>}
-      {error && <div style={{ color: "crimson" }}>Error: {error}</div>}
-      {!loading && !error && !vehicle && <div>No vehicle.</div>}
+  if (!vehicle)
+    return (
+      <div style={{ padding: 24 }}>
+        <p style={{ fontSize: 12, color: "#555" }}>Secured on blockchain</p>
+        <Link to="/search">← Back to search</Link>
+        <p style={{ marginTop: 12 }}>Loading…</p>
+      </div>
+    );
 
-      {vehicle && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 24 }}>
-          <div>
-            <h1 style={{ margin: "8px 0 12px" }}>
-              {vehicle.year} {vehicle.make} {vehicle.model} {vehicle.trim}
-            </h1>
-            <p>VIN: {vehicle.vin}</p>
-            <p>
-              {vehicle.price ? `$${vehicle.price.toLocaleString()}` : ""}
-              {vehicle.mileage ? ` • ${vehicle.mileage.toLocaleString()} miles` : ""}
-              {vehicle.location ? ` • ${vehicle.location}` : ""}
-            </p>
-            <p>Status: {vehicle.status || "In stock"}</p>
+  return (
+    <div style={{ padding: 24, maxWidth: 960 }}>
+      <p style={{ fontSize: 12, color: "#555" }}>Secured on blockchain</p>
+      <Link to="/search">← Back to search</Link>
 
-            <h3>History</h3>
-            <p>No history yet.</p>
-          </div>
+      <h2 style={{ marginTop: 16 }}>
+        {vehicle.year} {vehicle.make} {vehicle.model} {vehicle.trim}
+      </h2>
+      <p>VIN: {vehicle.vin}</p>
+      <p>
+        {vehicle.price ? `$${Number(vehicle.price).toLocaleString()}` : ""}
+      </p>
+      <p>
+        {vehicle.mileage
+          ? `${Number(vehicle.mileage).toLocaleString()} miles`
+          : ""}{" "}
+        • {vehicle.location || ""}
+      </p>
+      <p>Status: {vehicle.status || "In stock"}</p>
 
-          <aside
-            style={{
-              border: "1px solid #e5e7eb",
-              borderRadius: 8,
-              padding: 12,
-              height: "fit-content",
-            }}
-          >
-            <h4 style={{ marginTop: 0 }}>Contact dealer</h4>
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const fd = new FormData(e.currentTarget);
-                const body = {
-                  vin: vehicle.vin,
-                  name: fd.get("name"),
-                  email: fd.get("email"),
-                  phone: fd.get("phone"),
-                  message: fd.get("message"),
-                };
-                try {
-                  await http.post("/api/leads", body);
-                  alert("Sent");
-                  e.currentTarget.reset();
-                } catch {
-                  alert("Failed to send");
-                }
-              }}
-            >
-              <input name="name" placeholder="Your name" style={{ width: "100%", marginBottom: 8 }} />
-              <input name="email" placeholder="Email" style={{ width: "100%", marginBottom: 8 }} />
-              <input name="phone" placeholder="Phone" style={{ width: "100%", marginBottom: 8 }} />
-              <textarea name="message" placeholder="Message" rows={5} style={{ width: "100%", marginBottom: 8 }} />
-              <button type="submit" style={{ width: "100%" }}>Send</button>
-            </form>
-          </aside>
-        </div>
-      )}
+      <h3 style={{ marginTop: 24 }}>History</h3>
+      <p>No history yet.</p>
     </div>
   );
 }
