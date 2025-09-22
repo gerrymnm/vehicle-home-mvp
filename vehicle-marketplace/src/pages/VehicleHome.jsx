@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useParams, useLocation } from "react-router-dom";
-import http from "../lib/api.js";
+import { http } from "../lib/api.js";
 
 export default function VehicleHome() {
   const { vin: vinFromPath } = useParams();
