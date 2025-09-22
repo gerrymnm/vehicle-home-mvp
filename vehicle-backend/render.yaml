@@ -1,19 +1,9 @@
 services:
   - type: web
-    name: vehicle-home-api
+    name: vehicle-home-mvp
+    rootDirectory: vehicle-backend
     env: node
-    plan: free
-    rootDir: vehicle-backend
     buildCommand: npm ci && npm run build
-    startCommand: npm start
+    startCommand: npm run start
+    plan: free
     autoDeploy: true
-    healthCheckPath: /health
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: JWT_SECRET
-        generateValue: true
-      - key: PGSSL
-        value: "1"
-      - key: DATABASE_URL
-        sync: false

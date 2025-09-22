@@ -1,4 +1,3 @@
-// vehicle-backend/src/search.ts
 import { Router } from "express";
 const router = Router();
 
