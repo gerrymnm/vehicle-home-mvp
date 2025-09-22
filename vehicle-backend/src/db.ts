@@ -1,20 +1,24 @@
-// vehicle-backend/src/db.ts
-import { Pool, QueryResult } from "pg";
+import { Pool, PoolClient, QueryResult } from "pg";
 
 /**
- * PG connection pool. Expects process.env.DATABASE_URL to be set.
- * Works on Render/Neon. SSL is enabled by default (safe for most hosted PG).
+ * Connection pool. Expects DATABASE_URL to be set (Render/Neon friendly).
+ * Set PGSSL=disable locally if you don't want SSL.
  */
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl:
     process.env.PGSSL === "disable"
       ? false
-      : { rejectUnauthorized: false }, // Render/Neon friendly
+      : { rejectUnauthorized: false },
 });
 
 /** Low-level pool (query API): db.query(text, params) */
 export const db = pool;
+
+/** Back-compat for files that do: import { getPool } from "./db" */
+export function getPool(): Pool {
+  return pool;
+}
 
 /**
  * Tagged template helper so you can write:
@@ -33,6 +37,16 @@ export async function sql(
   }
   const result: QueryResult = await pool.query(text, values);
   return result.rows;
+}
+
+/** Optional helper for transactions or multi-step work with a client */
+export async function withClient<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    return await fn(client);
+  } finally {
+    client.release();
+  }
 }
 
 export default pool;
