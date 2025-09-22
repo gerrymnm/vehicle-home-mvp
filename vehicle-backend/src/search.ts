@@ -1,52 +1,77 @@
-import { Router } from "express";
+import { Router, Request, Response } from "express";
+import pool from "./db";
+
 const router = Router();
 
-router.get("/", (req, res) => {
-  const q = String(req.query.q || "").toLowerCase();
-  const page = Math.max(parseInt(String(req.query.page || "1"), 10) || 1, 1);
-  const pageSize = Math.max(parseInt(String(req.query.pageSize || "20"), 10) || 20, 1);
+/**
+ * GET /api/search?q=&page=&pagesize=
+ * Never references "year" in SQL; selects * and normalizes.
+ */
+router.get("/", async (req: Request, res: Response) => {
+  try {
+    const q = String(req.query.q ?? "").trim();
+    const page = Math.max(parseInt(String(req.query.page ?? "1"), 10) || 1, 1);
+    const size = Math.min(Math.max(parseInt(String(req.query.pagesize ?? "20"), 10) || 20, 1), 50);
+    const offset = (page - 1) * size;
 
-  const all = [
-    {
-      vin: "3MZBPACL4PM300002",
-      year: 2023,
-      make: "Mazda",
-      model: "Mazda3",
-      trim: "Select",
-      mileage: 5800,
-      price: 23950,
-      location: "Bay Area, CA",
-      title: "2023 Mazda Mazda3 Select",
-    },
-    {
-      vin: "JM1BPBLL9M1300001",
-      year: 2021,
-      make: "Mazda",
-      model: "Mazda3",
-      trim: "Preferred",
-      mileage: 24500,
-      price: 20995,
-      location: "Marin County, CA",
-      title: "2021 Mazda Mazda3 Preferred",
-    },
-  ];
+    let rows: any[] = [];
+    if (!q) {
+      const r = await pool.query(
+        `SELECT * FROM vehicles ORDER BY created_at DESC NULLS LAST OFFSET $1 LIMIT $2`,
+        [offset, size]
+      );
+      rows = r.rows;
+    } else {
+      const like = `%${q}%`;
+      // search only columns we know exist across sources: vin/make/model/trim
+      const r = await pool.query(
+        `
+          SELECT * FROM vehicles
+          WHERE vin ILIKE $1 OR make ILIKE $1 OR model ILIKE $1 OR trim ILIKE $1
+          ORDER BY created_at DESC NULLS LAST
+          OFFSET $2 LIMIT $3
+        `,
+        [like, offset, size]
+      );
+      rows = r.rows;
+    }
 
-  const filtered = q
-    ? all.filter((x) =>
-        [x.make, x.model, x.trim, x.title].join(" ").toLowerCase().includes(q)
-      )
-    : all;
+    const toNum = (v: any) => (v == null ? null : Number(v));
 
-  const start = (page - 1) * pageSize;
-  const results = filtered.slice(start, start + pageSize);
+    const results = rows.map((row) => ({
+      vin: row.vin,
+      title: [
+        row.model_year ?? row["modelYear"] ?? row["yr"] ?? null,
+        row.make,
+        row.model,
+        row.trim,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      subtitle: [
+        row.vin,
+        toNum(row.mileage ?? row.odometer ?? row.miles ?? row.odometer_mi) != null
+          ? `${toNum(row.mileage ?? row.odometer ?? row.miles ?? row.odometer_mi)?.toLocaleString()} miles`
+          : null,
+        row.location ?? (row.city && row.state ? `${row.city}, ${row.state}` : row.state ?? null),
+      ]
+        .filter(Boolean)
+        .join(" • "),
+      price: toNum(row.price ?? row.list_price ?? row.asking_price ?? row.msrp),
+    }));
 
-  res.json({
-    query: { q, page, pageSize, dir: "asc" },
-    count: results.length,
-    total: filtered.length,
-    totalPages: Math.max(1, Math.ceil(filtered.length / pageSize)),
-    results,
-  });
+    return res.json({
+      ok: true,
+      q,
+      page,
+      pagesize: size,
+      results,
+      nextPage: rows.length === size ? page + 1 : null,
+    });
+  } catch (e: any) {
+    console.error("[search] error:", e);
+    return res.status(500).json({ ok: false, error: e.message || "server_error" });
+  }
 });
 
 export default router;
