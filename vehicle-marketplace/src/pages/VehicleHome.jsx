@@ -18,9 +18,9 @@ export default function VehicleHome() {
       setLoading(true);
       setErr("");
       try {
-        const res = await http(`/api/search?q=vin:${encodeURIComponent(vin)}`);
-        const first = res.results?.[0] || null;
-        if (!off) setVehicle(first);
+        const res = await http(`/api/search?q=${encodeURIComponent(vin)}`);
+        const match = Array.isArray(res.results) ? res.results.find(r => r.vin === vin) || res.results[0] : null;
+        if (!off) setVehicle(match || null);
       } catch {
         if (!off) setErr("Failed to load vehicle");
       } finally {
