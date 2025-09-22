@@ -19,10 +19,11 @@ export default function VehicleHome() {
       setErr("");
       try {
         const res = await http(`/api/search?q=${encodeURIComponent(vin)}`);
-        const match = Array.isArray(res.results) ? res.results.find(r => r.vin === vin) || res.results[0] : null;
-        if (!off) setVehicle(match || null);
-      } catch {
-        if (!off) setErr("Failed to load vehicle");
+        const list = Array.isArray(res.results) ? res.results : [];
+        const match = list.find(r => r.vin === vin) || list[0] || null;
+        if (!off) setVehicle(match);
+      } catch (e) {
+        if (!off) setErr(e?.message || "Failed to load vehicle");
       } finally {
         if (!off) setLoading(false);
       }
@@ -53,26 +54,29 @@ export default function VehicleHome() {
       });
       setSent(true);
       setLead({ name: "", email: "", phone: "", message: "" });
-    } catch {
-      setErr("Failed to send");
+    } catch (e) {
+      setErr(e?.message || "Failed to send");
     } finally {
       setSending(false);
     }
   }
 
   return (
-    <div style={{ maxWidth: 960, margin: "0 auto", padding: "24px" }}>
+    <div style={{ maxWidth: 960, margin: "0 auto", padding: 24 }}>
       <Link to="/search">← Back to search</Link>
       {loading && <p>Loading...</p>}
       {err && <p style={{ color: "red" }}>Error: {err}</p>}
       {vehicle && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: "24px", alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 24, alignItems: "start" }}>
           <div>
-            <h1 style={{ margin: "12px 0" }}>{vehicle.year} {vehicle.make} {vehicle.model} {vehicle.trim}</h1>
+            <h1 style={{ margin: "12px 0" }}>
+              {vehicle.year} {vehicle.make} {vehicle.model} {vehicle.trim}
+            </h1>
             <p>VIN: {vehicle.vin}</p>
             <p>{vehicle.mileage?.toLocaleString?.() || vehicle.mileage} miles • {vehicle.location || ""}</p>
             <p>{vehicle.price ? `$${Number(vehicle.price).toLocaleString()}` : ""}</p>
             <p>Status: {vehicle.sold ? "Sold" : "In stock"}</p>
+
             <h3 style={{ marginTop: 24 }}>History</h3>
             {history.length === 0 && <p>No history yet.</p>}
             {history.length > 0 && (
@@ -83,6 +87,7 @@ export default function VehicleHome() {
               </ul>
             )}
           </div>
+
           <div style={{ border: "1px solid #ddd", borderRadius: 4, padding: 12 }}>
             <h3>Contact dealer</h3>
             {sent && <div style={{ color: "green", marginBottom: 8 }}>Sent.</div>}
@@ -96,6 +101,7 @@ export default function VehicleHome() {
           </div>
         </div>
       )}
+      {!loading && !vehicle && !err && <p>No match found.</p>}
     </div>
   );
 }
