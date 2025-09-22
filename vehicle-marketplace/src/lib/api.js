@@ -1,64 +1,42 @@
-// Tiny fetch wrapper for the frontend to call the backend.
-// It reads the base URL from Vite env: VITE_API_BASE_URL
-const BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+// vehicle-marketplace/src/lib/api.js
 
-// Build absolute URL for an API path
-export function apiUrl(path) {
-  return `${BASE}${path}`;
+const BASE = (import.meta.env?.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+
+function toUrl(path) {
+  const clean = path.startsWith("/") ? path : `/${path}`;
+  return `${BASE}${clean}`;
 }
 
-// Core request helper
-async function request(path, opts = {}) {
-  const res = await fetch(apiUrl(path), {
-    credentials: "include",
-    ...opts,
+/** Core fetch with good errors */
+export async function http(path, opts = {}) {
+  const url = toUrl(path);
+
+  const res = await fetch(url, {
+    method: opts.method || "GET",
+    headers: {
+      "Content-Type": "application/json",
+      ...(opts.headers || {}),
+    },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+    credentials: "include",      // keep for future auth
+    mode: "cors",
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `HTTP ${res.status}`);
+    // capture server text to help debugging
+    const text = await res.text().catch(() => "");
+    throw new Error(`${res.status} ${res.statusText}${text ? ` — ${text}` : ""}`);
   }
 
   const ct = res.headers.get("content-type") || "";
   return ct.includes("application/json") ? res.json() : res.text();
 }
 
-// HTTP convenience methods
-const http = {
-  get: (path) => request(path),
-  post: (path, body) =>
-    request(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body ?? {}),
-    }),
-  put: (path, body) =>
-    request(path, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body ?? {}),
-    }),
-  del: (path) =>
-    request(path, {
-      method: "DELETE",
-    }),
+/** Convenience API */
+export const api = {
+  search: ({ q, page = 1, pageSize = 20, dir = "asc" }) => {
+    const qs = new URLSearchParams({ q, page, pageSize, dir }).toString();
+    return http(`/api/search?${qs}`);
+  },
+  vehicleByVin: (vin) => http(`/api/vehicles/${encodeURIComponent(vin)}`),
 };
-
-// Token helpers (kept for compatibility with older code)
-export function setTokens(accessToken, refreshToken, role) {
-  if (accessToken != null) localStorage.setItem("accessToken", accessToken);
-  if (refreshToken != null) localStorage.setItem("refreshToken", refreshToken);
-  if (role != null) localStorage.setItem("role", role);
-}
-export function clearTokens() {
-  localStorage.removeItem("accessToken");
-  localStorage.removeItem("refreshToken");
-  localStorage.removeItem("role");
-}
-
-// Exports:
-// - default: http
-// - named: http, api (alias), apiUrl, setTokens, clearTokens
-export const api = http; // alias so imports like { api } keep working
-export { http };
-export default http;

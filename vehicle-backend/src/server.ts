@@ -8,13 +8,35 @@ import metricsRouter from "./metrics";
 import eventsRouter from "./events";
 import leadsRouter from "./leads";
 import vehiclesRouter from "./vehicles";
+import cors from "cors";
 
 const PORT = Number(process.env.PORT || 10000);
 const HOST = process.env.HOST || "0.0.0.0";
 
 const app = express();
-app.use(cors({ origin: "*", credentials: false }));
 app.use(express.json({ limit: "4mb" }));
+const allowList: (string | RegExp)[] = [
+  "http://localhost:5173",
+  "https://vehicle-home-mvp.vercel.app",
+  /\.vercel\.app$/, // preview builds
+];
+
+const corsMw = cors({
+  credentials: true,
+  origin(origin, cb) {
+    if (!origin) return cb(null, true); // curl/postman
+    const ok = allowList.some((o) =>
+      typeof o === "string" ? o === origin : o.test(origin)
+    );
+    return ok ? cb(null, true) : cb(new Error(`CORS blocked: ${origin}`));
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+});
+
+app.use(corsMw);
+app.options("*", corsMw);
+
 app.use(morgan("dev"));
 
 app.use("/api/search", searchRouter);
