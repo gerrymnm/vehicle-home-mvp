@@ -1,36 +1,27 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import morgan from "morgan";
 import { initDB } from "./db";
 import searchRouter from "./search";
 import metricsRouter from "./metrics";
 import eventsRouter from "./events";
 import leadsRouter from "./leads";
+import vehiclesRouter from "./vehicles";
 
-const app = express();
 const PORT = Number(process.env.PORT || 10000);
 const HOST = process.env.HOST || "0.0.0.0";
 
-app.use(
-  cors({
-    origin: [
-      /\.vercel\.app$/,
-      "https://vehicle-home-mvp.vercel.app",
-      "http://localhost:5173",
-      "http://localhost:3000",
-    ],
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: false,
-  })
-);
-app.options("*", cors());
-app.use(express.json());
+const app = express();
+app.use(cors({ origin: "*", credentials: false }));
+app.use(express.json({ limit: "4mb" }));
+app.use(morgan("dev"));
 
-app.use("/api", searchRouter);
-app.use("/api", metricsRouter);
-app.use("/api", eventsRouter);
-app.use("/api", leadsRouter);
+app.use("/api/search", searchRouter);
+app.use("/api/metrics", metricsRouter);
+app.use("/api/events", eventsRouter);
+app.use("/api/leads", leadsRouter);
+app.use(vehiclesRouter);
 
 async function main() {
   await initDB();
@@ -38,10 +29,7 @@ async function main() {
     console.log(`[backend] listening on http://${HOST}:${PORT}`);
   });
 }
-
 main().catch((err) => {
   console.error("Fatal error starting server:", err);
   process.exit(1);
 });
-
-export default app;
