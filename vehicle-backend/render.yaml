@@ -1,9 +1,9 @@
 services:
   - type: web
     name: vehicle-home-mvp
-    rootDirectory: vehicle-backend
     env: node
+    rootDir: vehicle-backend
     buildCommand: npm ci && npm run build
     startCommand: npm run start
-    plan: free
+    healthCheckPath: /api/health
     autoDeploy: true
