@@ -1,39 +1,39 @@
 import type { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
+import jwt, { type Secret, type SignOptions } from "jsonwebtoken";
 
-/** What we store in JWTs (keep minimal for now). */
+/** JWT payload we use everywhere */
 export type UserPayload = {
-  sub: string;        // unique user id (email for now)
-  role?: string;      // e.g. "dealer", "consumer"
+  sub: string;       // unique user id (email for now)
+  role?: string;
   email?: string;
 };
 
-const JWT_SECRET = process.env.JWT_SECRET || "dev_secret";
-const ACCESS_TTL = process.env.JWT_ACCESS_TTL || "15m";
-const REFRESH_TTL = process.env.JWT_REFRESH_TTL || "7d";
+const JWT_SECRET: Secret = (process.env.JWT_SECRET || "dev_secret") as Secret;
+
+// jsonwebtoken@^9 types use a branded template type for expiresIn.
+// Coerce env strings to the exact type expected.
+const ACCESS_TTL: SignOptions["expiresIn"] = (process.env.JWT_ACCESS_TTL || "15m") as any;
+const REFRESH_TTL: SignOptions["expiresIn"] = (process.env.JWT_REFRESH_TTL || "7d") as any;
 
 /** Create short-lived access token */
 export function signAccessToken(payload: UserPayload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TTL });
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TTL } as SignOptions);
 }
 
-/** Create refresh token (tagged) */
+/** Create refresh token */
 export function signRefreshToken(payload: UserPayload) {
-  return jwt.sign({ ...payload, typ: "refresh" }, JWT_SECRET, {
-    expiresIn: REFRESH_TTL,
-  });
+  return jwt.sign({ ...payload, typ: "refresh" }, JWT_SECRET, { expiresIn: REFRESH_TTL } as SignOptions);
 }
 
-/** Express middleware: require valid Bearer token and attach req.user */
+/** Require a valid Bearer token and attach req.user */
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const h = req.headers.authorization || "";
   const token = h.startsWith("Bearer ") ? h.slice(7) : "";
-
   if (!token) return res.status(401).json({ error: "missing_token" });
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as UserPayload;
-    req.user = decoded;
+    (req as any).user = decoded;
     next();
   } catch {
     return res.status(401).json({ error: "invalid_token" });
@@ -48,3 +48,5 @@ declare global {
     }
   }
 }
+
+export default requireAuth;
