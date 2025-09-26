@@ -1,66 +1,77 @@
 import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { http, setTokens, clearTokens, api } from "./api.js";
 
-const AuthCtx = React.createContext(null);
+// Self-contained tiny fetch wrapper (doesn't rely on api.js)
+const BASE = import.meta?.env?.VITE_API_BASE_URL || "";
+
+async function http(path, opts = {}) {
+  const res = await fetch(`${BASE}${path}`, {
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    ...opts,
+  });
+  const text = await res.text();
+  let data;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (!res.ok) throw new Error(data?.error || data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+const AuthCtx = React.createContext({
+  user: null,
+  ready: false,
+  login: async (_payload) => {},
+  logout: async () => {},
+});
 
 export function AuthProvider({ children }) {
   const [user, setUser] = React.useState(null);
-  const [loading, setLoading] = React.useState(true);
+  const [ready, setReady] = React.useState(false);
 
-  async function fetchMe() {
-    try {
-      const res = await api("/api/auth/me");
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data.user);
-      } else {
+  // Try to fetch the current user (if already logged in)
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const me = await http("/api/auth/me");
+        setUser(me?.user ?? null);
+      } catch {
         setUser(null);
+      } finally {
+        setReady(true);
       }
-    } catch {
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  }
+    })();
+  }, []);
 
-  React.useEffect(() => { fetchMe(); }, []);
+  const login = async (payload) => {
+    // payload: { email, password } or whatever your backend expects
+    const r = await http("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    setUser(r?.user ?? null);
+    return r;
+  };
 
-  async function login(email, password) {
-    const data = await http.post("/api/auth/login", { email, password });
-    setTokens(data.access, data.refresh);
-    setUser(data.user);
-    return data.user;
-  }
-
-  async function register(payload) {
-    const data = await http.post("/api/auth/register", payload);
-    setTokens(data.access, data.refresh);
-    setUser(data.user);
-    return data.user;
-  }
-
-  function logout() {
-    clearTokens();
+  const logout = async () => {
+    // If you add a /api/auth/logout later, call it here. For now just clear.
     setUser(null);
-  }
+  };
 
-  const value = { user, loading, login, register, logout };
-  return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
+  return (
+    <AuthCtx.Provider value={{ user, ready, login, logout }}>
+      {children}
+    </AuthCtx.Provider>
+  );
 }
 
 export function useAuth() {
-  const ctx = React.useContext(AuthCtx);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
+  return React.useContext(AuthCtx);
 }
 
-export function RequireAuth({ roles, children }) {
-  const { user, loading } = useAuth();
-  const loc = useLocation();
-
-  if (loading) return <div>Loading...</div>;
-  if (!user) return <Navigate to="/login" state={{ from: loc }} replace />;
-  if (roles && !roles.includes(user.role)) return <div>Forbidden</div>;
+export function RequireAuth({ children }) {
+  const { user, ready } = useAuth();
+  const location = useLocation();
+  if (!ready) return null; // or a loader
+  if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
   return children;
 }
