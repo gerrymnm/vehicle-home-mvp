@@ -1,63 +1,41 @@
 // Tiny fetch wrapper for the frontend to call the backend.
-// Reads base URL from Vite env: VITE_API_BASE_URL (e.g. https://vehicle-home-mvp.onrender.com)
+// It reads the base URL from Vite env: VITE_API_BASE_URL
 
-const BASE =
-  (typeof import.meta !== "undefined" &&
-    import.meta.env &&
-    import.meta.env.VITE_API_BASE_URL &&
-    String(import.meta.env.VITE_API_BASE_URL).replace(/\/$/, "")) ||
-  "";
+const BASE = import.meta?.env?.VITE_API_BASE_URL || "";
 
-// Core request helper
-async function request(path, { method = "GET", data, headers } = {}) {
+async function http(path, opts = {}) {
   const url = `${BASE}${path}`;
-  const init = {
-    method,
-    headers: {
-      ...(data ? { "Content-Type": "application/json" } : {}),
-      ...(headers || {}),
-    },
+  const r = await fetch(url, {
+    headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
     credentials: "omit",
-    body: data ? JSON.stringify(data) : undefined,
-  };
-
-  const res = await fetch(url, init);
-  const isJSON = (res.headers.get("content-type") || "").includes("application/json");
-  const body = isJSON ? await res.json().catch(() => ({})) : await res.text();
-
-  if (!res.ok) {
-    const msg =
-      (isJSON && (body.error || body.message)) ||
-      `HTTP ${res.status} ${res.statusText}`;
-    throw new Error(msg);
+    ...opts,
+  });
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    throw new Error(text || `HTTP ${r.status}`);
   }
-  return body;
+  // Some endpoints may return HTML error pages; try JSON safely.
+  const ct = r.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) return { ok: true };
+  return r.json();
 }
 
-// Public API used throughout the app
 export const api = {
-  // Search inventory
-  search({ q = "", page = 1, pageSize = 20, dir = "asc" } = {}) {
-    const params = new URLSearchParams({
-      q,
-      page: String(page),
-      pagesize: String(pageSize),
-      dir,
-    });
-    return request(`/api/search?${params.toString()}`);
+  search: async ({ q, page = 1, pageSize = 20 } = {}) => {
+    const usp = new URLSearchParams();
+    if (q) usp.set("q", q);
+    usp.set("page", String(page));
+    usp.set("pagesize", String(pageSize));
+    return http(`/api/search?${usp.toString()}`);
   },
 
-  // Health check (optional)
-  health() {
-    return request(`/api/health`);
-  },
-
-  // Vehicle-related calls
   vehicles: {
-    // Fetch a single vehicle by VIN for the VDP
-    getByVin(vin) {
-      if (!vin) throw new Error("VIN required");
-      return request(`/api/vehicles/${encodeURIComponent(vin)}`);
-    },
+    getByVin: async (vin) => http(`/api/vehicles/${encodeURIComponent(vin)}`),
+    getPhotos: async (vin) => http(`/api/vehicles/${encodeURIComponent(vin)}/photos`),
+    getHistory: async (vin, type = "all") =>
+      http(`/api/vehicles/${encodeURIComponent(vin)}/history?type=${encodeURIComponent(type)}`),
   },
 };
+
+export { http }; // keep named export for other files that may use it
+export default api; // optional default to avoid accidental import mistakes

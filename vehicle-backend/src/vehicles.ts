@@ -1,156 +1,175 @@
-import { Router, type Request, type Response } from "express";
-import pool from "./db";
+import { Router, Request, Response } from "express";
+import sql, { type QueryResult } from "./db";
+
+/**
+ * Vehicles API
+ * - GET /api/vehicles/:vin                 -> summary details
+ * - GET /api/vehicles/:vin/photos          -> up to 100 photo URLs (mock for now)
+ * - GET /api/vehicles/:vin/history?type=   -> maintenance | accident | ownership | all (default)
+ */
 
 const router = Router();
 
-/** Safe helpers that don't crash if a table is missing (MVP-friendly). */
-async function one<T = any>(sql: string, params: any[]): Promise<T | null> {
-  try {
-    const r = await pool.query(sql, params);
-    return (r.rows[0] as T) ?? null;
-  } catch (e) {
-    return null;
-  }
-}
-async function many<T = any>(sql: string, params: any[]): Promise<T[]> {
-  try {
-    const r = await pool.query(sql, params);
-    return (r.rows as T[]) ?? [];
-  } catch (e) {
-    return [];
-  }
-}
-
-/** Normalize DB row (or partial) into the Vehicle Home shape. */
-function normalizeVehicle(r: any, vin: string) {
-  const images: string[] = r?.images || r?.photos || [];
-  const status = r?.in_stock === false ? "Unavailable" : "In stock";
+/** Normalize a DB row (or plain object) into our frontend shape. */
+function normalizeRow(r: any) {
   return {
-    vin,
-    year: r?.year ?? 0,
-    make: r?.make ?? "",
-    model: r?.model ?? "",
-    trim: r?.trim ?? "",
-    mileage: r?.mileage ?? 0,
-    price: r?.price ?? null,
-    location: r?.location ?? "",
-    status,
-    engine: r?.engine ?? null,
-    transmission: r?.transmission ?? null,
-    images,
+    vin: r.vin,
+    year: Number(r.year) || r.year,
+    make: r.make,
+    model: r.model,
+    trim: r.trim ?? "",
+    mileage: Number(r.mileage) || 0,
+    price: Number(r.price) || null,
+    location: r.location ?? "",
+    status: r.in_stock ? "In stock" : "Unknown",
+    images: Array.isArray(r.images) ? r.images : [], // kept here for future use
   };
 }
 
-/** Optional fallbacks for known sample VINs so Vehicle Home always renders. */
-function fallbackRow(vin: string) {
-  const map: Record<string, any> = {
-    "3MZBPACL4PM300002": {
-      year: 2023, make: "Mazda", model: "Mazda3", trim: "Select",
-      mileage: 5800, price: 23950, location: "Bay Area, CA", in_stock: true,
-      engine: "2.5L I4", transmission: "Automatic", photos: []
+/** ---- MOCKS for Photos & History (until real providers are wired) ---- */
+
+type Photo = { url: string; caption?: string };
+type HistoryEvent = {
+  id: string;
+  type: "maintenance" | "accident" | "ownership";
+  at: string; // ISO date
+  title: string;
+  detail?: string;
+};
+
+const PHOTOS: Record<string, Photo[]> = {
+  "3MZBPACL4PM300002": [
+    { url: "https://images.unsplash.com/photo-1542367597-8849ebee0df6?q=80&w=1200&auto=format&fit=crop", caption: "Front 3/4" },
+    { url: "https://images.unsplash.com/photo-1503376780353-7e6692767b70?q=80&w=1200&auto=format&fit=crop", caption: "Side" },
+    { url: "https://images.unsplash.com/photo-1511919884226-fd3cad34687c?q=80&w=1200&auto=format&fit=crop", caption: "Interior" },
+  ],
+  "JM1BPBLL9M1300001": [
+    { url: "https://images.unsplash.com/photo-1517940310602-75c2c068f9ae?q=80&w=1200&auto=format&fit=crop", caption: "Front" },
+    { url: "https://images.unsplash.com/photo-1549921296-3b4a4f3f3a5a?q=80&w=1200&auto=format&fit=crop", caption: "Rear" },
+  ],
+};
+
+const HISTORY: Record<string, HistoryEvent[]> = {
+  "3MZBPACL4PM300002": [
+    {
+      id: "h1",
+      type: "ownership",
+      at: "2024-01-12",
+      title: "Title issued",
+      detail: "First owner reported",
     },
-    "JM1BPBLL9M1300001": {
-      year: 2021, make: "Mazda", model: "Mazda3", trim: "Preferred",
-      mileage: 24500, price: 20995, location: "Marin County, CA", in_stock: true,
-      engine: "2.5L I4", transmission: "Automatic", photos: []
-    }
-  };
-  return map[vin] ?? null;
-}
+    {
+      id: "h2",
+      type: "maintenance",
+      at: "2024-07-18",
+      title: "Scheduled maintenance",
+      detail: "5k service: engine oil & filter",
+    },
+  ],
+  "JM1BPBLL9M1300001": [
+    {
+      id: "h3",
+      type: "maintenance",
+      at: "2023-11-03",
+      title: "Brake inspection",
+      detail: "Front pads 8mm, rear pads 7mm",
+    },
+    {
+      id: "h4",
+      type: "accident",
+      at: "2024-03-22",
+      title: "Minor damage reported",
+      detail: "Right rear cosmetic repair reported by insurer",
+    },
+    {
+      id: "h5",
+      type: "ownership",
+      at: "2024-04-05",
+      title: "Title updated",
+      detail: "Owner change recorded",
+    },
+  ],
+};
 
-/**
- * GET /api/vehicles/:vin
- * Returns:
- * {
- *   ok: true,
- *   vehicle: {...},
- *   lien: {...}|null,
- *   history: [...],
- *   inspection: {...}|null,
- *   smog: {...}|null,
- *   nmvtis: {...}|null,
- *   ksr: {...}|null
- * }
- */
+/** -------------------------- Routes -------------------------- */
+
+/** Vehicle summary (existing endpoint). */
 router.get("/:vin", async (req: Request, res: Response) => {
-  const vin = String(req.params.vin);
-
   try {
-    // Try DB first.
-    let vrow = await one<any>("SELECT * FROM vehicles WHERE vin = $1 LIMIT 1", [vin]);
+    const vin = req.params.vin;
+    // Try DB first; if no DB row, build a minimal object from known VINs to keep demo flowing.
+    let row: any | null = null;
 
-    // Fallback to a built-in seed if there is no table or row yet.
-    if (!vrow) vrow = fallbackRow(vin);
-
-    if (!vrow) {
-      return res.status(404).json({ ok: false, error: "vehicle_not_found" });
+    try {
+      const q = await sql`
+        SELECT *
+        FROM vehicles
+        WHERE vin = ${vin}
+        LIMIT 1
+      `;
+      row = (q as QueryResult<any>).rows?.[0] ?? null;
+    } catch {
+      // DB may not have the table/row — ignore errors and fall back.
+      row = null;
     }
 
-    const vehicle = normalizeVehicle(vrow, vin);
+    if (!row) {
+      // Fallback minimal demo data so the page renders.
+      const demo: Record<string, any> = {
+        "3MZBPACL4PM300002": {
+          vin,
+          year: 2023,
+          make: "Mazda",
+          model: "Mazda3",
+          trim: "Select",
+          mileage: 5800,
+          price: 23950,
+          location: "Bay Area, CA",
+          in_stock: true,
+        },
+        "JM1BPBLL9M1300001": {
+          vin,
+          year: 2021,
+          make: "Mazda",
+          model: "Mazda3",
+          trim: "Preferred",
+          mileage: 24500,
+          price: 20995,
+          location: "Marin County, CA",
+          in_stock: true,
+        },
+      };
+      row = demo[vin] ?? { vin, in_stock: false };
+    }
 
-    // Pull optional related data—these calls are safe even if tables don't exist.
-    const lien = await one<any>(
-      "SELECT lender, amount_owed, per_diem, payoff_good_through, title_with, same_day_payoff " +
-      "FROM liens WHERE vin = $1 ORDER BY created_at DESC LIMIT 1",
-      [vin]
-    );
-
-    // Generic history table, payload is JSONB; filter on client.
-    const history = await many<any>(
-      "SELECT id, type, summary, payload, created_at " +
-      "FROM events WHERE vin = $1 ORDER BY created_at DESC LIMIT 100",
-      [vin]
-    );
-
-    const inspection = await one<any>(
-      "SELECT tires, brakes, notes, created_at FROM inspections WHERE vin = $1 " +
-      "ORDER BY created_at DESC LIMIT 1",
-      [vin]
-    );
-
-    const smog = await one<any>(
-      "SELECT status, date, station FROM smog WHERE vin = $1 ORDER BY date DESC LIMIT 1",
-      [vin]
-    );
-
-    const nmvtis = await one<any>(
-      "SELECT brands, theft, odometer_brand FROM nmvtis WHERE vin = $1 ORDER BY created_at DESC LIMIT 1",
-      [vin]
-    );
-
-    const ksr = await one<any>(
-      "SELECT data FROM ksr WHERE vin = $1 ORDER BY created_at DESC LIMIT 1",
-      [vin]
-    );
-
-    return res.json({
-      ok: true,
-      vehicle,
-      lien: lien ?? {
-        hasLien: false,
-        lender: null,
-        amount_owed: null,
-        per_diem: null,
-        payoff_good_through: null,
-        title_with: null,
-        same_day_payoff: false,
-      },
-      history: history.map(h => ({
-        id: h.id,
-        type: h.type ?? "note",
-        at: h.created_at,
-        summary: h.summary ?? null,
-        details: h.payload ?? null,
-      })),
-      inspection: inspection ?? { tires: null, brakes: null, notes: null },
-      smog: smog ?? { status: "unknown", date: null, station: null },
-      nmvtis: nmvtis ?? { brands: [], theft: false, odometer: "Unknown" },
-      ksr: ksr?.data ?? null
-    });
+    const vehicle = normalizeRow(row);
+    return res.json({ ok: true, vehicle, history: [] });
   } catch (e: any) {
-    console.error("[vehicles] error:", e);
-    return res.status(500).json({ ok: false, error: e?.message || "server_error" });
+    console.error("[vehicles] load error:", e);
+    return res.status(500).json({ ok: false, error: e?.message ?? "Server error" });
   }
+});
+
+/** Vehicle photos (mocked up to 100). */
+router.get("/:vin/photos", async (req: Request, res: Response) => {
+  const vin = req.params.vin;
+  const photos = PHOTOS[vin] ?? [];
+  // Cap at 100 for now.
+  return res.json({ ok: true, count: photos.length, photos: photos.slice(0, 100) });
+});
+
+/** Vehicle history with filter. */
+router.get("/:vin/history", async (req: Request, res: Response) => {
+  const vin = req.params.vin;
+  const type = String(req.query.type ?? "all") as "all" | "maintenance" | "accident" | "ownership";
+  let items = HISTORY[vin] ?? [];
+
+  if (type !== "all") items = items.filter((e) => e.type === type);
+
+  // Sort newest first
+  items = items.slice().sort((a, b) => (a.at < b.at ? 1 : -1));
+
+  return res.json({ ok: true, type, count: items.length, events: items });
 });
 
 export default router;
