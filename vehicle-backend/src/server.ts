@@ -22,32 +22,32 @@ app.use(express.json({ limit: "4mb" }));
  * - your production Vercel app
  * - any preview *.vercel.app
  */
+// ---- CORS (allow Vercel + localhost; reflect requested headers) ----
 const allowList: (string | RegExp)[] = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
   "http://localhost:4173",
   "http://127.0.0.1:4173",
   "https://vehicle-home-mvp.vercel.app",
-  /\.vercel\.app$/i,
+  /\.vercel\.app$/i, // preview deployments
 ];
 
-// CORS middleware (no credentials needed)
 const corsMw = cors({
   origin(origin, cb) {
-    // no origin => curl/postman or same-origin -> allow
-    if (!origin) return cb(null, true);
-    const ok = allowList.some(entry =>
-      typeof entry === "string" ? entry === origin : entry.test(origin)
-    );
+    if (!origin) return cb(null, true); // curl/postman
+    const ok = allowList.some(v => (typeof v === "string" ? v === origin : v.test(origin)));
     return ok ? cb(null, true) : cb(new Error(`CORS blocked: ${origin}`));
   },
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: false,            // we don't use cookies
+  optionsSuccessStatus: 204,     // some browsers expect 204 on preflight
+  // NOTE: do NOT set allowedHeaders/methods here; leaving them undefined
+  // makes the cors package echo back the browser’s requested headers/methods.
 });
 
-// IMPORTANT: handle preflight first, then use CORS on all routes
+// Handle preflight first, then apply on all requests
 app.options("*", corsMw);
 app.use(corsMw);
+
 
 // Logging after CORS
 app.use(morgan("dev"));
