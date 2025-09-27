@@ -1,6 +1,5 @@
 import { Router, Request, Response } from "express";
-import { sql } from "./db";            // ✅ use the named export 'sql' from ./db
-import type { QueryResult } from "pg"; // ✅ get QueryResult type from 'pg'
+import { sql } from "./db"; // our tagged-sql helper (shape may vary between envs)
 
 /**
  * Vehicles API
@@ -14,16 +13,16 @@ const router = Router();
 /** Normalize a DB row (or plain object) into our frontend shape. */
 function normalizeRow(r: any) {
   return {
-    vin: r.vin,
-    year: Number(r.year) || r.year,
-    make: r.make,
-    model: r.model,
-    trim: r.trim ?? "",
-    mileage: Number(r.mileage) || 0,
-    price: Number(r.price) || null,
-    location: r.location ?? "",
-    status: r.in_stock ? "In stock" : "Unknown",
-    images: Array.isArray(r.images) ? r.images : [],
+    vin: r?.vin,
+    year: Number(r?.year) || r?.year,
+    make: r?.make,
+    model: r?.model,
+    trim: r?.trim ?? "",
+    mileage: Number(r?.mileage) || 0,
+    price: r?.price != null ? Number(r.price) : null,
+    location: r?.location ?? "",
+    status: r?.in_stock ? "In stock" : "Unknown",
+    images: Array.isArray(r?.images) ? r.images : [],
   };
 }
 
@@ -71,13 +70,14 @@ router.get("/:vin", async (req: Request, res: Response) => {
     let row: any | null = null;
 
     try {
-      const q = await sql`
+      // sql() may return { rows: [...] } or just [...]
+      const r: any = await sql`
         SELECT *
         FROM vehicles
         WHERE vin = ${vin}
         LIMIT 1
       `;
-      row = (q as QueryResult<any>).rows?.[0] ?? null;
+      row = r?.rows?.[0] ?? r?.[0] ?? null;
     } catch {
       row = null; // table may not exist in demo DB; fall back below
     }
