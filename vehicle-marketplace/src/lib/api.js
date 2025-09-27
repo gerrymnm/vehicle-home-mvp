@@ -1,24 +1,33 @@
-// vehicle-marketplace/src/lib/api.js
+// Robust API client that works with or without VITE_API_BASE_URL
 
-// Base URL comes from Vercel/Vite env (Settings → Environment Variables)
-const BASE =
-  (import.meta?.env?.VITE_API_BASE_URL || "").replace(/\/+$/, ""); // strip trailing slash
+// If VITE_API_BASE_URL is set, we use it (no trailing slash).
+// Otherwise we fall back to window.location.origin so relative calls work on Vercel.
+const ENV_BASE = (import.meta?.env?.VITE_API_BASE_URL ?? "").trim();
+const RUNTIME_ORIGIN =
+  typeof window !== "undefined" && window.location?.origin
+    ? window.location.origin
+    : "";
+const BASE = (ENV_BASE || RUNTIME_ORIGIN).replace(/\/+$/, "");
 
-async function request(path, { params, ...opts } = {}) {
-  const url = new URL(`${BASE}${path}`);
+function buildUrl(path, params) {
+  const p = path.startsWith("/") ? path : `/${path}`;
+  const url = new URL(p, BASE || "http://localhost"); // URL needs a base
   if (params) {
-    Object.entries(params).forEach(([k, v]) => {
+    for (const [k, v] of Object.entries(params)) {
       if (v !== undefined && v !== null && v !== "") {
         url.searchParams.set(k, String(v));
       }
-    });
+    }
   }
+  return url.toString();
+}
 
-  const res = await fetch(url.toString(), {
+async function request(path, { params, ...opts } = {}) {
+  const url = buildUrl(path, params);
+  const res = await fetch(url, {
     headers: { "Content-Type": "application/json" },
     ...opts,
   });
-
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status} ${res.statusText} — ${text || path}`);
@@ -42,5 +51,5 @@ export const api = {
     }),
 };
 
-// also export default for any legacy imports
+// legacy default export
 export default api;
