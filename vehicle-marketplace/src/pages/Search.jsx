@@ -1,97 +1,78 @@
-import React, { useEffect, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+// vehicle-marketplace/src/pages/Search.jsx
+import React, { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../lib/api.js";
 
 export default function Search() {
-  const [params] = useSearchParams();
-  const navigate = useNavigate();
-
-  const [q, setQ] = useState(params.get("q") || "");
-  const page = Number(params.get("page") || 1);
-
-  const [state, setState] = useState(null);
+  const nav = useNavigate();
+  const loc = useLocation();
+  const qs = useMemo(() => new URLSearchParams(loc.search), [loc.search]);
+  const [q, setQ] = useState(qs.get("q") || "");
+  const [page, setPage] = useState(Number(qs.get("page") || 1));
+  const [state, setState] = useState({ results: [], total: 0, count: 0 });
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    // Whenever URL params change, refetch
-    const qParam = params.get("q") || "";
-    if (!qParam) {
-      setState(null);
-      setErr("");
-      return;
-    }
-    run(qParam, page);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params]);
-
-  async function run(qValue, pageValue) {
     setErr("");
-    setLoading(true);
-    try {
-      const data = await api.search({ q: qValue, page: pageValue });
-      setState(data);
-    } catch (e) {
-      setErr(e?.message || String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
+    const run = async () => {
+      setLoading(true);
+      try {
+        const data = await api.search({ q: qs.get("q") || "", page: Number(qs.get("page") || 1) });
+        // data comes back as: { ok: true, query: {...}, count, total, totalPages, results: [...] }
+        setState({ results: data.results || [], total: data.total || 0, count: data.count || 0 });
+      } catch (e) {
+        setErr(e.message || String(e));
+        setState({ results: [], total: 0, count: 0 });
+      } finally {
+        setLoading(false);
+      }
+    };
+    run();
+  }, [qs]);
 
-  function onSubmit(e) {
+  const onSubmit = (e) => {
     e.preventDefault();
-    navigate(`/search?q=${encodeURIComponent(q)}&page=1`);
-  }
+    nav(`/search?q=${encodeURIComponent(q)}&page=1`);
+    setPage(1);
+  };
 
   return (
-    <main style={{ maxWidth: 900, margin: "0 auto", padding: "24px" }}>
+    <div style={{ maxWidth: 920, margin: "32px auto" }}>
       <h2>Find your next vehicle</h2>
-
-      <form onSubmit={onSubmit} role="search" aria-label="Vehicle Search" style={{ display: "flex", gap: 8 }}>
+      <form onSubmit={onSubmit} style={{ display: "flex", gap: 8, margin: "12px 0 18px" }}>
         <input
+          type="search"
+          placeholder="Search by make, model, VIN..."
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search by make, model, VIN..."
-          style={{ flex: 1, padding: "8px" }}
-          name="q"
-          aria-label="Search query"
+          style={{ flex: 1, padding: "8px 10px" }}
         />
-        <button type="submit" style={{ padding: "8px 12px" }}>Search</button>
+        <button type="submit">Search</button>
       </form>
-
-      <p style={{ color: "#666", marginTop: 6, fontSize: 13 }}>
-        Try: <em>Mazda, Accord, Grand Cherokee</em>
-      </p>
 
       {loading && <p>Loading…</p>}
       {err && <p style={{ color: "crimson" }}>Error: {err}</p>}
 
-      {state && (state.results?.length ? (
-        <ul style={{ listStyle: "none", padding: 0, marginTop: 18 }}>
-          {state.results.map((v) => {
-            const title = [v.year, v.make, v.model, v.trim].filter(Boolean).join(" ");
-            return (
-              <li key={v.vin} style={{ padding: "10px 0", borderBottom: "1px solid #eee" }}>
-                <div style={{ fontWeight: 600 }}>
-                  <Link to={`/vehicles/${v.vin}`}>{title}</Link>
-                </div>
-                <div style={{ color: "#333", fontSize: 14 }}>
-                  VIN: {v.vin}
-                  {v.mileage != null && <> • {v.mileage?.toLocaleString?.()} miles</>}
-                  {v.location && <> • {v.location}</>}
-                </div>
-                {v.price != null && (
-                  <div style={{ color: "#333", fontSize: 14 }}>
-                    ${Number(v.price).toLocaleString()}
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <p>No results.</p>
-      ))}
-    </main>
+      {!loading && !err && state.results.length === 0 && <p>No results.</p>}
+
+      <ul style={{ listStyle: "none", padding: 0 }}>
+        {state.results.map((r) => (
+          <li key={r.vin} style={{ padding: "12px 0" }}>
+            <a href={`/vehicles/${encodeURIComponent(r.vin)}`} style={{ fontWeight: 600 }}>
+              {r.title || `${r.year} ${r.make} ${r.model} ${r.trim ?? ""}`.trim()}
+            </a>
+            <div style={{ color: "#555", fontSize: 14, marginTop: 4 }}>
+              VIN: {r.vin}
+              {typeof r.mileage === "number" ? ` • ${r.mileage.toLocaleString()} miles` : ""}
+              {r.location ? ` • ${r.location}` : ""}
+            </div>
+            {typeof r.price === "number" && (
+              <div style={{ marginTop: 4 }}>${r.price.toLocaleString()}</div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
