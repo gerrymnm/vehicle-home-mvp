@@ -1,41 +1,46 @@
-// Tiny fetch wrapper for the frontend to call the backend.
-// It reads the base URL from Vite env: VITE_API_BASE_URL
+// vehicle-marketplace/src/lib/api.js
 
-const BASE = import.meta?.env?.VITE_API_BASE_URL || "";
+// Base URL comes from Vercel/Vite env (Settings → Environment Variables)
+const BASE =
+  (import.meta?.env?.VITE_API_BASE_URL || "").replace(/\/+$/, ""); // strip trailing slash
 
-async function http(path, opts = {}) {
-  const url = `${BASE}${path}`;
-  const r = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
-    credentials: "omit",
+async function request(path, { params, ...opts } = {}) {
+  const url = new URL(`${BASE}${path}`);
+  if (params) {
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") {
+        url.searchParams.set(k, String(v));
+      }
+    });
+  }
+
+  const res = await fetch(url.toString(), {
+    headers: { "Content-Type": "application/json" },
     ...opts,
   });
-  if (!r.ok) {
-    const text = await r.text().catch(() => "");
-    throw new Error(text || `HTTP ${r.status}`);
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status} ${res.statusText} — ${text || path}`);
   }
-  // Some endpoints may return HTML error pages; try JSON safely.
-  const ct = r.headers.get("content-type") || "";
-  if (!ct.includes("application/json")) return { ok: true };
-  return r.json();
+  return res.json();
 }
 
 export const api = {
-  search: async ({ q, page = 1, pageSize = 20 } = {}) => {
-    const usp = new URLSearchParams();
-    if (q) usp.set("q", q);
-    usp.set("page", String(page));
-    usp.set("pagesize", String(pageSize));
-    return http(`/api/search?${usp.toString()}`);
-  },
+  search: ({ q, page = 1, pageSize = 20 } = {}) =>
+    request("/api/search", { params: { q, page, pageSize } }),
 
-  vehicles: {
-    getByVin: async (vin) => http(`/api/vehicles/${encodeURIComponent(vin)}`),
-    getPhotos: async (vin) => http(`/api/vehicles/${encodeURIComponent(vin)}/photos`),
-    getHistory: async (vin, type = "all") =>
-      http(`/api/vehicles/${encodeURIComponent(vin)}/history?type=${encodeURIComponent(type)}`),
-  },
+  vehicleByVin: (vin) =>
+    request(`/api/vehicles/${encodeURIComponent(vin)}`),
+
+  photosByVin: (vin) =>
+    request(`/api/vehicles/${encodeURIComponent(vin)}/photos`),
+
+  historyByVin: (vin, type = "all") =>
+    request(`/api/vehicles/${encodeURIComponent(vin)}/history`, {
+      params: { type },
+    }),
 };
 
-export { http }; // keep named export for other files that may use it
-export default api; // optional default to avoid accidental import mistakes
+// also export default for any legacy imports
+export default api;
