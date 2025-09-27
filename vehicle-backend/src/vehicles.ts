@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
-import sql, { type QueryResult } from "./db";
+import { sql } from "./db";            // ✅ use the named export 'sql' from ./db
+import type { QueryResult } from "pg"; // ✅ get QueryResult type from 'pg'
 
 /**
  * Vehicles API
@@ -22,7 +23,7 @@ function normalizeRow(r: any) {
     price: Number(r.price) || null,
     location: r.location ?? "",
     status: r.in_stock ? "In stock" : "Unknown",
-    images: Array.isArray(r.images) ? r.images : [], // kept here for future use
+    images: Array.isArray(r.images) ? r.images : [],
   };
 }
 
@@ -51,53 +52,22 @@ const PHOTOS: Record<string, Photo[]> = {
 
 const HISTORY: Record<string, HistoryEvent[]> = {
   "3MZBPACL4PM300002": [
-    {
-      id: "h1",
-      type: "ownership",
-      at: "2024-01-12",
-      title: "Title issued",
-      detail: "First owner reported",
-    },
-    {
-      id: "h2",
-      type: "maintenance",
-      at: "2024-07-18",
-      title: "Scheduled maintenance",
-      detail: "5k service: engine oil & filter",
-    },
+    { id: "h1", type: "ownership",  at: "2024-01-12", title: "Title issued",           detail: "First owner reported" },
+    { id: "h2", type: "maintenance",at: "2024-07-18", title: "Scheduled maintenance",  detail: "5k service: engine oil & filter" },
   ],
   "JM1BPBLL9M1300001": [
-    {
-      id: "h3",
-      type: "maintenance",
-      at: "2023-11-03",
-      title: "Brake inspection",
-      detail: "Front pads 8mm, rear pads 7mm",
-    },
-    {
-      id: "h4",
-      type: "accident",
-      at: "2024-03-22",
-      title: "Minor damage reported",
-      detail: "Right rear cosmetic repair reported by insurer",
-    },
-    {
-      id: "h5",
-      type: "ownership",
-      at: "2024-04-05",
-      title: "Title updated",
-      detail: "Owner change recorded",
-    },
+    { id: "h3", type: "maintenance",at: "2023-11-03", title: "Brake inspection",       detail: "Front pads 8mm, rear pads 7mm" },
+    { id: "h4", type: "accident",   at: "2024-03-22", title: "Minor damage reported",  detail: "Right rear cosmetic repair" },
+    { id: "h5", type: "ownership",  at: "2024-04-05", title: "Title updated",          detail: "Owner change recorded" },
   ],
 };
 
 /** -------------------------- Routes -------------------------- */
 
-/** Vehicle summary (existing endpoint). */
+/** Vehicle summary */
 router.get("/:vin", async (req: Request, res: Response) => {
   try {
     const vin = req.params.vin;
-    // Try DB first; if no DB row, build a minimal object from known VINs to keep demo flowing.
     let row: any | null = null;
 
     try {
@@ -109,12 +79,10 @@ router.get("/:vin", async (req: Request, res: Response) => {
       `;
       row = (q as QueryResult<any>).rows?.[0] ?? null;
     } catch {
-      // DB may not have the table/row — ignore errors and fall back.
-      row = null;
+      row = null; // table may not exist in demo DB; fall back below
     }
 
     if (!row) {
-      // Fallback minimal demo data so the page renders.
       const demo: Record<string, any> = {
         "3MZBPACL4PM300002": {
           vin,
@@ -150,25 +118,20 @@ router.get("/:vin", async (req: Request, res: Response) => {
   }
 });
 
-/** Vehicle photos (mocked up to 100). */
+/** Vehicle photos (mocked) */
 router.get("/:vin/photos", async (req: Request, res: Response) => {
   const vin = req.params.vin;
   const photos = PHOTOS[vin] ?? [];
-  // Cap at 100 for now.
   return res.json({ ok: true, count: photos.length, photos: photos.slice(0, 100) });
 });
 
-/** Vehicle history with filter. */
+/** Vehicle history with filter */
 router.get("/:vin/history", async (req: Request, res: Response) => {
   const vin = req.params.vin;
   const type = String(req.query.type ?? "all") as "all" | "maintenance" | "accident" | "ownership";
   let items = HISTORY[vin] ?? [];
-
   if (type !== "all") items = items.filter((e) => e.type === type);
-
-  // Sort newest first
-  items = items.slice().sort((a, b) => (a.at < b.at ? 1 : -1));
-
+  items = items.slice().sort((a, b) => (a.at < b.at ? 1 : -1)); // newest first
   return res.json({ ok: true, type, count: items.length, events: items });
 });
 
