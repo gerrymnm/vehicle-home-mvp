@@ -1,4 +1,3 @@
-// vehicle-marketplace/src/pages/VehicleHome.jsx
 import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../lib/api.js";
@@ -21,27 +20,19 @@ export default function VehicleHome() {
       setLoading(true);
       setErr("");
       try {
-        // vehicle
         const v = await api.vehicle(vin);
-        // backend may return {ok:true, vehicle:{...}} or just the object
         const vObj = v?.vehicle ?? v;
         if (on) setVehicle(vObj || null);
 
-        // photos (mock)
         try {
           const ph = await api.photos(vin);
           if (on) setPhotos(Array.isArray(ph?.photos) ? ph.photos : []);
-        } catch {
-          if (on) setPhotos([]);
-        }
+        } catch { if (on) setPhotos([]); }
 
-        // history (mock)
         try {
           const h = await api.history(vin, "all");
           if (on) setHistory(Array.isArray(h?.events) ? h.events : []);
-        } catch {
-          if (on) setHistory([]);
-        }
+        } catch { if (on) setHistory([]); }
       } catch (e) {
         if (on) setErr(e.message || String(e));
       } finally {
@@ -71,9 +62,7 @@ export default function VehicleHome() {
     );
   }
 
-  const {
-    year, make, model, trim, price, mileage, location, status
-  } = vehicle;
+  const { year, make, model, trim, price, mileage, location, status } = vehicle;
 
   return (
     <div>
