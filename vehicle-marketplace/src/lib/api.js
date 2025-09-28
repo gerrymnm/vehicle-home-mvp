@@ -1,36 +1,89 @@
-// Tiny fetch wrapper for the frontend to call the backend safely.
-// Reads base URL from Vite env: VITE_API_BASE_URL (must include https://...)
-const BASE = (import.meta.env?.VITE_API_BASE_URL || "").trim();
+// vehicle-marketplace/src/lib/api.js
 
-// Always build URLs with the WHATWG URL API to avoid bad concatenation
-function u(path, params) {
-  const url = new URL(path.replace(/^\//, ""), BASE.endsWith("/") ? BASE : BASE + "/");
-  if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
+// Read the backend base URL from Vite env
+const RAW_BASE = import.meta.env.VITE_API_BASE_URL || "";
+const API_BASE = RAW_BASE.replace(/\/+$/, ""); // trim trailing slash if present
+
+function buildURL(path, query = undefined) {
+  const url = new URL(
+    path.startsWith("/") ? `${API_BASE}${path}` : `${API_BASE}/${path}`
+  );
+  if (query && typeof query === "object") {
+    Object.entries(query).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v);
+    });
+  }
   return url.toString();
 }
 
-async function request(path, { method = "GET", params, body } = {}) {
-  const res = await fetch(u(path, params), {
+async function request(method, path, { query, body } = {}) {
+  const url = buildURL(path, query);
+  const res = await fetch(url, {
     method,
     headers: body ? { "Content-Type": "application/json" } : undefined,
-    // CRITICAL: no cookies/credentials => simpler CORS
-    credentials: "omit",
+    body: body ? JSON.stringify(body) : undefined,
+    // We don't need credentials for public endpoints
     mode: "cors",
   });
+
   const text = await res.text();
+
+  // Try JSON first; if HTML or plain text came back, throw a helpful error
   let data;
-  try { data = text ? JSON.parse(text) : null; } catch { data = { ok: false, error: text }; }
-  if (!res.ok) throw new Error(data?.error || res.statusText || "Request failed");
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(
+      `Unexpected response (HTTP ${res.status}) from ${url}:\n${text.slice(0, 200)}`
+    );
+  }
+
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.error || `HTTP ${res.status}`);
+  }
   return data;
 }
 
 export const api = {
-  search: ({ q, page = 1, pageSize = 20, dir = "asc" }) =>
-    request("/api/search", { params: { q, page, pageSize, dir } }),
-  vehicle: (vin) => request(`/api/vehicles/${encodeURIComponent(vin)}`),
-  photos: (vin) => request(`/api/vehicles/${encodeURIComponent(vin)}/photos`),
-  history: (vin, type = "all") =>
-    request(`/api/vehicles/${encodeURIComponent(vin)}/history`, { params: { type } }),
-};
+  /** Search vehicles */
+  async search({ q, page = 1, pageSize = 20, dir = "asc" }) {
+    const data = await request("GET", "/api/search", {
+      query: { q, page, pageSize, dir },
+    });
+    // Expected shape: { ok, results: [...] }
+    return data;
+  },
 
-export default api;
+  /** Get vehicle by VIN */
+  async vehicle(vin) {
+    const data = await request("GET", `/api/vehicles/${encodeURIComponent(vin)}`);
+    // Expected shape: { ok, vehicle: {...} }
+    return data;
+  },
+
+  /** Alias to match older code paths */
+  async getByVin(vin) {
+    return this.vehicle(vin);
+  },
+
+  /** Photos for a VIN (mocked for now) */
+  async photos(vin) {
+    const data = await request(
+      "GET",
+      `/api/vehicles/${encodeURIComponent(vin)}/photos`
+    );
+    // Expected shape: { ok, photos: [...] }
+    return data;
+  },
+
+  /** History for a VIN, optional type filter: all | maintenance | accident | ownership */
+  async history(vin, type = "all") {
+    const data = await request(
+      "GET",
+      `/api/vehicles/${encodeURIComponent(vin)}/history`,
+      { query: { type } }
+    );
+    // Expected shape: { ok, events: [...] }
+    return data;
+  },
+};
