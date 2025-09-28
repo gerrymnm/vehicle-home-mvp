@@ -1,112 +1,94 @@
-// Full file: vehicle-marketplace/src/pages/Search.jsx
 import React, { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import api from "../lib/api.js";
+import { searchVehicles } from "../lib/api.js"; // <-- import the named function
 
-const container = {
-  maxWidth: "900px",
-  margin: "0 auto",
-  padding: "24px 16px",
-};
+const h1 = { fontSize: "22px", fontWeight: 600, margin: "24px 0 12px" };
+const err = { color: "crimson", marginTop: 12 };
 
 export default function Search() {
-  const [sp] = useSearchParams();
-  const [query, setQuery] = useState(sp.get("q") || "");
-  const [page, setPage] = useState(Number(sp.get("page") || 1));
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [data, setData] = useState(null);
+  const [params, setParams] = useSearchParams();
+  const [q, setQ] = useState(params.get("q") || "");
+  const page = Number(params.get("page") || 1);
 
-  async function run() {
-    setLoading(true);
-    setError("");
-    setData(null);
-    try {
-      const res = await api.searchVehicles(query, page, 20);
-      // Backend returns: { ok, count, total, totalPages, results }
-      if (res?.ok === false) {
-        throw new Error(res?.error || "Search failed");
-      }
-      setData(res);
-    } catch (e) {
-      console.error("Search error:", e);
-      setError(e?.message || "Search failed");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState([]);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    // re-run whenever the URL changes (?q= & page=)
-    const p = Number(sp.get("page") || 1);
-    setPage(p);
-    setQuery(sp.get("q") || "");
+    const run = async () => {
+      if (!params.get("q")) {
+        setResults([]);
+        setError("");
+        return;
+      }
+      setLoading(true);
+      setError("");
+      try {
+        const data = await searchVehicles({
+          q: params.get("q") || "",
+          page,
+          pagesize: 20,
+          dir: "asc",
+        });
+        // backend shape: { ok, results, count, total, totalPages, ... }
+        setResults(Array.isArray(data.results) ? data.results : []);
+      } catch (e) {
+        setError(`Search failed: ${e.message || e}`);
+        setResults([]);
+      } finally {
+        setLoading(false);
+      }
+    };
     run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sp.toString()]);
+  }, [params, page]);
+
+  const onSubmit = (e) => {
+    e.preventDefault();
+    const next = new URLSearchParams(params);
+    if (q) next.set("q", q);
+    else next.delete("q");
+    next.set("page", "1");
+    setParams(next);
+  };
 
   return (
-    <div style={container}>
-      <h2 style={{ fontSize: 22, margin: "6px 0 12px", fontWeight: 700 }}>
-        Find your next vehicle
-      </h2>
+    <div style={{ maxWidth: 960, margin: "0 auto", padding: "24px 16px" }}>
+      <h1 style={h1}>Find your next vehicle</h1>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          const params = new URLSearchParams(sp);
-          params.set("q", (query || "").trim());
-          params.set("page", "1");
-          window.location.search = params.toString();
-        }}
-        style={{ display: "flex", gap: 8, marginBottom: 12 }}
-      >
+      <form onSubmit={onSubmit} style={{ display: "flex", gap: 8 }}>
         <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
           placeholder="Search by make, model, VIN…"
           style={{ flex: 1, padding: "8px 10px" }}
         />
-        <button type="submit" style={{ padding: "8px 12px" }}>
-          Search
-        </button>
+        <button type="submit" style={{ padding: "8px 12px" }}>Search</button>
       </form>
 
-      <p style={{ color: "#666", fontSize: 12, margin: "6px 0 14px" }}>
+      <p style={{ color: "#777", fontSize: 12, marginTop: 8 }}>
         Try: <em>Mazda, Accord, Grand Cherokee</em>
       </p>
 
       {loading && <p>Loading…</p>}
-      {error && <p style={{ color: "crimson" }}>Error: {error}</p>}
+      {error && <p style={err}>Error: {error}</p>}
 
-      {!loading && !error && data?.results?.length > 0 && (
-        <ul style={{ paddingLeft: 18, lineHeight: 1.6 }}>
-          {data.results.map((r, i) => {
-            const title =
-              r.title ||
-              `${r.year ?? ""} ${r.make ?? ""} ${r.model ?? ""}${
-                r.trim ? " " + r.trim : ""
-              }`.trim();
-            const subtitle = [
-              r.vin ? `VIN: ${r.vin}` : null,
-              r.mileage ? `${Number(r.mileage).toLocaleString()} miles` : null,
-              r.location || null,
-              r.price ? `$${Number(r.price).toLocaleString()}` : null,
-            ]
-              .filter(Boolean)
-              .join(" • ");
-            return (
-              <li key={r.vin || i}>
-                <Link to={`/vehicles/${encodeURIComponent(r.vin)}`}>{title}</Link>
-                <div style={{ fontSize: 12, color: "#444" }}>{subtitle}</div>
+      {!loading && !error && (
+        <ul style={{ marginTop: 12 }}>
+          {results.length === 0 ? (
+            <p>No results.</p>
+          ) : (
+            results.map((r) => (
+              <li key={r.vin} style={{ marginBottom: 10 }}>
+                <Link to={`/vehicles/${r.vin}`}>
+                  {r.title || `${r.year} ${r.make} ${r.model}${r.trim ? " " + r.trim : ""}`}
+                </Link>
+                <div style={{ fontSize: 12, color: "#555" }}>
+                  VIN: {r.vin} • {r.mileage?.toLocaleString?.() ?? r.mileage} miles • {r.location} • ${r.price}
+                </div>
               </li>
-            );
-          })}
+            ))
+          )}
         </ul>
-      )}
-
-      {!loading && !error && (!data || data?.results?.length === 0) && (
-        <p>No results.</p>
       )}
     </div>
   );
