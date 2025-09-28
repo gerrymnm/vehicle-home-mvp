@@ -23,13 +23,12 @@ export default function Search() {
     setData(null);
     try {
       const res = await api.searchVehicles(query, page, 20);
-      // Backend shape: { ok, count, total, totalPages, results: [...] }
+      // Backend returns: { ok, count, total, totalPages, results }
       if (res?.ok === false) {
         throw new Error(res?.error || "Search failed");
       }
       setData(res);
     } catch (e) {
-      // Surface the real message and log full details
       console.error("Search error:", e);
       setError(e?.message || "Search failed");
     } finally {
@@ -38,6 +37,10 @@ export default function Search() {
   }
 
   useEffect(() => {
+    // re-run whenever the URL changes (?q= & page=)
+    const p = Number(sp.get("page") || 1);
+    setPage(p);
+    setQuery(sp.get("q") || "");
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sp.toString()]);
@@ -52,7 +55,7 @@ export default function Search() {
         onSubmit={(e) => {
           e.preventDefault();
           const params = new URLSearchParams(sp);
-          params.set("q", query.trim());
+          params.set("q", (query || "").trim());
           params.set("page", "1");
           window.location.search = params.toString();
         }}
@@ -79,10 +82,14 @@ export default function Search() {
       {!loading && !error && data?.results?.length > 0 && (
         <ul style={{ paddingLeft: 18, lineHeight: 1.6 }}>
           {data.results.map((r, i) => {
-            const title = r.title || `${r.year} ${r.make} ${r.model}${r.trim ? " " + r.trim : ""}`;
+            const title =
+              r.title ||
+              `${r.year ?? ""} ${r.make ?? ""} ${r.model ?? ""}${
+                r.trim ? " " + r.trim : ""
+              }`.trim();
             const subtitle = [
               r.vin ? `VIN: ${r.vin}` : null,
-              r.mileage ? `${r.mileage.toLocaleString()} miles` : null,
+              r.mileage ? `${Number(r.mileage).toLocaleString()} miles` : null,
               r.location || null,
               r.price ? `$${Number(r.price).toLocaleString()}` : null,
             ]
