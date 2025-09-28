@@ -13,53 +13,41 @@ const PORT = Number(process.env.PORT || 10000);
 const HOST = process.env.HOST || "0.0.0.0";
 
 const app = express();
-
-// JSON body
 app.use(express.json({ limit: "4mb" }));
 
 /**
- * CORS — allow your Vercel front-end and local dev.
- * If you later add a custom domain, add it to allowList.
+ * TEMP: allow any origin so Vercel can call us even on previews/cold starts.
+ * (No cookies involved, so credentials = false is fine.)
+ * Once everything works, we can tighten this to an allowlist.
  */
-const allowList: (string | RegExp)[] = [
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
-  "https://vehicle-home-mvp.vercel.app",
-  /\.vercel\.app$/, // preview or alternate Vercel branches
-];
-
-const corsMw = cors({
-  credentials: true,
-  origin(origin, cb) {
-    if (!origin) return cb(null, true); // curl/postman
-    const ok = allowList.some(o =>
-      typeof o === "string" ? o === origin : o.test(origin)
-    );
-    return ok ? cb(null, true) : cb(new Error(`CORS blocked: ${origin}`));
-  },
+app.use(cors({
+  origin: true,           // reflect the incoming Origin
+  credentials: false,     // keep false to allow Access-Control-Allow-Origin: *
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
+  maxAge: 600,            // cache preflight
+}));
+
+// Make sure OPTIONS always returns 204 fast
+app.options("*", (_req, res) => {
+  res.sendStatus(204);
 });
 
-app.use(corsMw);
-app.options("*", corsMw);
-
-// Logs
 app.use(morgan("dev"));
 
-/** --------- Health --------- */
-app.get("/api/health", (_req: Request, res: Response) => {
+// Health
+app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "vehicle-backend", ts: new Date().toISOString() });
 });
 
-/** --------- API mounts (NOTE the /api/vehicles base) --------- */
+// API mounts
 app.use("/api/search", searchRouter);
 app.use("/api/vehicles", vehiclesRouter);
 app.use("/api/metrics", metricsRouter);
 app.use("/api/events", eventsRouter);
 app.use("/api/leads", leadsRouter);
 
-// Fallback 404 JSON for API paths
+// 404 for unknown /api/* routes as JSON
 app.use("/api", (_req, res) => {
   res.status(404).json({ ok: false, error: "Not found" });
 });
