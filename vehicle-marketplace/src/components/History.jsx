@@ -1,63 +1,54 @@
 // Full file: vehicle-marketplace/src/components/History.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { getVehicleHistory } from "../lib/api";
+import { getVehicleHistory } from "../lib/api.js";
 
 export default function History({ vin }) {
   const [type, setType] = useState("all"); // all | maintenance | accident | ownership
-  const [loading, setLoading] = useState(false);
-  const [items, setItems] = useState([]);
+  const [data, setData] = useState({ ok: true, type: "all", count: 0, events: [] });
   const [err, setErr] = useState("");
-
-  const options = useMemo(
-    () => [
-      { value: "all", label: "All" },
-      { value: "maintenance", label: "Maintenance" },
-      { value: "accident", label: "Accident" },
-      { value: "ownership", label: "Ownership" },
-    ],
-    []
-  );
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      setLoading(true);
       setErr("");
       try {
-        const data = await getVehicleHistory(vin, type);
-        // backend returns { ok, type, count, events }
-        setItems(Array.isArray(data.events) ? data.events : []);
+        const res = await getVehicleHistory(vin, type);
+        if (alive) setData(res);
       } catch (e) {
-        setErr(String(e.message || e));
-      } finally {
-        if (alive) setLoading(false);
+        if (alive) setErr(String(e.message || e));
       }
     })();
     return () => { alive = false; };
   }, [vin, type]);
 
+  const events = useMemo(() => data?.events || [], [data]);
+
   return (
-    <section>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-        <strong>History</strong>
-        <select value={type} onChange={(e) => setType(e.target.value)}>
-          {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    <div>
+      <div className="bar" style={{ gap: 8, alignItems: "center" }}>
+        <label htmlFor="history-type" style={{ fontWeight: 600 }}>History</label>
+        <select id="history-type" value={type} onChange={(e)=>setType(e.target.value)}>
+          <option value="all">All</option>
+          <option value="maintenance">Maintenance</option>
+          <option value="accident">Accident</option>
+          <option value="ownership">Ownership</option>
         </select>
       </div>
-      {loading && <p>Loading history…</p>}
+
       {err && <p style={{ color: "crimson" }}>Error: {err}</p>}
-      {!loading && !err && items.length === 0 && <p>No history yet.</p>}
-      <ul style={{ paddingLeft: 18, maxWidth: 760 }}>
-        {items.map((ev, i) => (
-          <li key={i} style={{ marginBottom: 6 }}>
-            <span style={{ fontFamily: "monospace" }}>
-              {ev.date ?? "YYYY-MM-DD"}
-            </span>{" "}
-            • <em>{ev.type ?? "event"}</em>{" "}
-            {ev.note ? <span>— {ev.note}</span> : null}
-          </li>
-        ))}
-      </ul>
-    </section>
+      {!err && events.length === 0 && <p className="muted">No history yet.</p>}
+
+      {events.length > 0 && (
+        <ul style={{ marginTop: 8 }}>
+          {events.map((e, i) => (
+            <li key={i}>
+              <strong style={{ textTransform: "capitalize" }}>{e.type}</strong>
+              {e.date ? ` — ${e.date}` : ""}{e.title ? ` — ${e.title}` : ""}
+              {e.odometer != null ? ` — ${e.odometer.toLocaleString()} mi` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
