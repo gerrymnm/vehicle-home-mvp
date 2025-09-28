@@ -1,53 +1,43 @@
-// Frontend API client (no cookies, no credentials) to avoid CORS headaches
-const BASE = (
-  import.meta?.env?.VITE_API_BASE_URL
-    ? String(import.meta.env.VITE_API_BASE_URL).replace(/\/$/, "")
-    : "https://vehicle-home-mvp.onrender.com"
-);
+// Full file: vehicle-marketplace/src/lib/api.js
+const BASE = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, "");
 
-function parseJsonSafely(text) {
-  try { return text ? JSON.parse(text) : {}; } catch { return { _raw: text }; }
+function buildURL(path, params) {
+  const url = new URL(`${BASE}${path}`);
+  if (params) Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v);
+  });
+  return url.toString();
 }
 
-async function toJson(res) {
+async function getJSON(url, init) {
+  const res = await fetch(url, { ...init, credentials: "omit" });
   const text = await res.text();
-  if (!res.ok) {
-    // Try to surface a useful error message even if the server sent HTML
-    const body = parseJsonSafely(text);
-    const msg =
-      (body && (body.error || body.message)) ||
-      (text && text.slice(0, 140)) ||
-      res.statusText ||
-      "Request failed";
-    throw new Error(msg);
+  let data;
+  try { data = text ? JSON.parse(text) : {}; } catch {
+    throw new Error(`Unexpected response (${res.status}): ${text.slice(0, 120)}…`);
   }
-  return parseJsonSafely(text);
+  if (!res.ok || data.ok === false || data.error) {
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  return data;
 }
 
-function get(path, { signal } = {}) {
-  return fetch(`${BASE}${path}`, { method: "GET", signal }).then(toJson);
+export async function searchVehicles({ q, page = 1, pageSize = 20 }) {
+  const url = buildURL("/api/search", { q, page, pageSize });
+  return getJSON(url);
 }
 
-function post(path, body = {}, { signal } = {}) {
-  return fetch(`${BASE}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" }, // simple header => no preflight
-    body: JSON.stringify(body),
-    signal,
-  }).then(toJson);
+export async function getVehicle(vin) {
+  const url = buildURL(`/api/vehicles/${encodeURIComponent(vin)}`);
+  return getJSON(url);
 }
 
-const api = {
-  base: BASE,
-  health: () => get(`/api/health`),
-  search: (q, page = 1, pageSize = 20) =>
-    get(`/api/search?q=${encodeURIComponent(q)}&page=${page}&pagesize=${pageSize}`),
-  vehicle: (vin) => get(`/api/vehicles/${encodeURIComponent(vin)}`),
-  photos: (vin) => get(`/api/vehicles/${encodeURIComponent(vin)}/photos`),
-  history: (vin, type = "all") =>
-    get(`/api/vehicles/${encodeURIComponent(vin)}/history?type=${encodeURIComponent(type)}`),
-  createLead: (vin, payload) => post(`/api/leads`, { vin, ...payload }),
-};
+export async function getVehiclePhotos(vin) {
+  const url = buildURL(`/api/vehicles/${encodeURIComponent(vin)}/photos`);
+  return getJSON(url);
+}
 
-export default api;
-export { api, get, post };
+export async function getVehicleHistory(vin, type = "all") {
+  const url = buildURL(`/api/vehicles/${encodeURIComponent(vin)}/history`, { type });
+  return getJSON(url);
+}

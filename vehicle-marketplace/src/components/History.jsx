@@ -1,96 +1,63 @@
+// Full file: vehicle-marketplace/src/components/History.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import api from "../lib/api.js";
-
-const TYPES = [
-  { value: "all", label: "All" },
-  { value: "maintenance", label: "Maintenance" },
-  { value: "accident", label: "Accident" },
-  { value: "ownership", label: "Ownership" },
-];
+import { getVehicleHistory } from "../lib/api";
 
 export default function History({ vin }) {
-  const [type, setType] = useState("all");
+  const [type, setType] = useState("all"); // all | maintenance | accident | ownership
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState([]);
   const [err, setErr] = useState("");
 
-  const title = useMemo(() => TYPES.find((t) => t.value === type)?.label ?? "All", [type]);
+  const options = useMemo(
+    () => [
+      { value: "all", label: "All" },
+      { value: "maintenance", label: "Maintenance" },
+      { value: "accident", label: "Accident" },
+      { value: "ownership", label: "Ownership" },
+    ],
+    []
+  );
 
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    setErr("");
-    api
-      .history(vin, type)
-      .then((r) => {
-        if (!alive) return;
-        const list = Array.isArray(r?.events) ? r.events : Array.isArray(r) ? r : [];
-        setItems(list);
-      })
-      .catch((e) => {
-        if (alive) setErr(e?.message || "Failed to load history");
-      })
-      .finally(() => alive && setLoading(false));
-    return () => {
-      alive = false;
-    };
+    (async () => {
+      setLoading(true);
+      setErr("");
+      try {
+        const data = await getVehicleHistory(vin, type);
+        // backend returns { ok, type, count, events }
+        setItems(Array.isArray(data.events) ? data.events : []);
+      } catch (e) {
+        setErr(String(e.message || e));
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
   }, [vin, type]);
 
   return (
     <section>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-        <h3 style={{ margin: 0 }}>History</h3>
-        <select
-          value={type}
-          onChange={(e) => setType(e.target.value)}
-          style={{ padding: "6px 8px" }}
-        >
-          {TYPES.map((t) => (
-            <option key={t.value} value={t.value}>
-              {t.label}
-            </option>
-          ))}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+        <strong>History</strong>
+        <select value={type} onChange={(e) => setType(e.target.value)}>
+          {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </div>
-
-      {loading && <p style={{ color: "#666" }}>Loading history…</p>}
+      {loading && <p>Loading history…</p>}
       {err && <p style={{ color: "crimson" }}>Error: {err}</p>}
-      {!loading && !err && items.length === 0 && <p style={{ color: "#666" }}>No history yet.</p>}
-
-      {items.length > 0 && (
-        <div style={{ overflowX: "auto" }}>
-          <table
-            style={{
-              borderCollapse: "collapse",
-              width: "100%",
-              maxWidth: 900,
-              border: "1px solid #e5e5e5",
-            }}
-          >
-            <thead style={{ background: "#fafafa" }}>
-              <tr>
-                <th style={th}>Date</th>
-                <th style={th}>Type</th>
-                <th style={th}>Title</th>
-                <th style={th}>Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((ev, i) => (
-                <tr key={i}>
-                  <td style={td}>{ev.date ?? ""}</td>
-                  <td style={td}>{ev.type ?? ""}</td>
-                  <td style={td}>{ev.title ?? ""}</td>
-                  <td style={td}>{ev.details ?? ""}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {!loading && !err && items.length === 0 && <p>No history yet.</p>}
+      <ul style={{ paddingLeft: 18, maxWidth: 760 }}>
+        {items.map((ev, i) => (
+          <li key={i} style={{ marginBottom: 6 }}>
+            <span style={{ fontFamily: "monospace" }}>
+              {ev.date ?? "YYYY-MM-DD"}
+            </span>{" "}
+            • <em>{ev.type ?? "event"}</em>{" "}
+            {ev.note ? <span>— {ev.note}</span> : null}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
-
-const th = { textAlign: "left", padding: "8px 10px", borderBottom: "1px solid #e5e5e5" };
-const td = { padding: "8px 10px", borderBottom: "1px solid #f0f0f0", verticalAlign: "top" };

@@ -1,98 +1,93 @@
+// Full file: vehicle-marketplace/src/pages/VehicleDetails.jsx
 import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import api from "../lib/api.js";
-import PhotoGrid from "../components/PhotoGrid.jsx";
-import History from "../components/History.jsx";
-import ComplianceBadges from "../components/ComplianceBadges.jsx";
-import LeadForm from "../components/LeadForm.jsx";
+import { getVehicle, getVehiclePhotos } from "../lib/api";
+import Photos from "../components/Photos";
+import History from "../components/History";
 
 export default function VehicleDetails() {
   const { vin } = useParams();
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
   const [vehicle, setVehicle] = useState(null);
   const [photos, setPhotos] = useState([]);
-  const [err, setErr] = useState("");
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    setErr("");
-
-    Promise.all([api.vehicle(vin), api.photos(vin)])
-      .then(([v, p]) => {
-        if (!alive) return;
-        const veh = v?.vehicle ?? v;
-        setVehicle(veh || null);
-
-        const imgs = Array.isArray(p?.photos) ? p.photos : Array.isArray(p) ? p : [];
-        setPhotos(imgs);
-      })
-      .catch((e) => alive && setErr(e?.message || "Failed to load vehicle"))
-      .finally(() => alive && setLoading(false));
-
-    return () => {
-      alive = false;
-    };
+    (async () => {
+      setLoading(true);
+      setErr("");
+      try {
+        const v = await getVehicle(vin);
+        setVehicle(v.vehicle ?? v); // backend returns {ok,vehicle}
+      } catch (e) {
+        setErr(String(e.message || e));
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
   }, [vin]);
 
-  if (loading) return <p style={{ color: "#666" }}>Loading…</p>;
-  if (err) return <p style={{ color: "crimson" }}>Error: {err}</p>;
-  if (!vehicle) return <p>No vehicle found.</p>;
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const ph = await getVehiclePhotos(vin);
+        const list = ph.photos ?? ph.images ?? [];
+        if (alive) setPhotos(Array.isArray(list) ? list : []);
+      } catch {
+        // non-blocking for photos
+      }
+    })();
+    return () => { alive = false; };
+  }, [vin]);
+
+  if (loading) return <p>Loading…</p>;
+  if (err) return (
+    <div>
+      <Link to="/search">← Back to search</Link>
+      <p style={{ color: "crimson" }}>Error: {err}</p>
+    </div>
+  );
+  if (!vehicle) return (
+    <div>
+      <Link to="/search">← Back to search</Link>
+      <p>No data.</p>
+    </div>
+  );
 
   const { year, make, model, trim, price, mileage, location, in_stock } = vehicle;
-
-  // if you later add compliance fields to the backend, map them here;
-  // for now we surface "unknown" which renders neutral badges
-  const compliance = {
-    smog: "unknown",
-    nmvtis: "unknown",
-    theft: "unknown",
-    ksr: "unknown",
-  };
+  const title = [year, make, model, trim].filter(Boolean).join(" ");
 
   return (
     <div>
+      <Link to="/search">← Back to search</Link>
+
+      <h2>{title || vin}</h2>
       <p>
-        <Link to={`/search?q=${encodeURIComponent(make || "")}`}>← Back to search</Link>
+        VIN: <strong>{vin}</strong>
+        {price ? <> • ${Number(price).toLocaleString()}</> : null}
+        {mileage ? <> • {Number(mileage).toLocaleString()} miles</> : null}
+        {location ? <> • {location}</> : null}
       </p>
+      <p>Status: {in_stock ? "in stock" : "not in stock"}</p>
 
-      <h2 style={{ margin: "8px 0 4px" }}>
-        {year} {make} {model} {trim ? <span>{trim}</span> : null}
-      </h2>
-      <p style={{ margin: "0 0 12px", color: "#444" }}>
-        VIN: {vin}
-        {price != null && ` • $${Number(price).toLocaleString()}`}
-        {mileage != null && ` • ${Number(mileage).toLocaleString()} miles`}
-        {location ? ` • ${location}` : ""}
-        {typeof in_stock === "boolean" ? ` • Status: ${in_stock ? "in stock" : "sold"}` : ""}
-      </p>
+      <h3>Photos</h3>
+      <Photos images={photos} />
 
-      {/* Photos */}
-      <section style={{ marginTop: 12 }}>
-        <h3>Photos</h3>
-        <PhotoGrid photos={photos} />
-      </section>
+      <h3>Lien</h3>
+      <p>No active lien reported.</p>
 
-      {/* Compliance / Records as badges */}
-      <section style={{ marginTop: 20 }}>
-        <h3 style={{ marginBottom: 8 }}>Compliance &amp; Records</h3>
-        <ComplianceBadges
-          smog={compliance.smog}
-          nmvtis={compliance.nmvtis}
-          theft={compliance.theft}
-          ksr={compliance.ksr}
-        />
-      </section>
+      <h3>Dealership Inspection</h3>
+      <p>Not provided.</p>
 
-      {/* Seller/lead form */}
-      <section style={{ marginTop: 24 }}>
-        <LeadForm vin={vin} />
-      </section>
+      <h3>Compliance &amp; Records</h3>
+      <p>Smog: unknown</p>
+      <p>NMVTIS: brands unknown • Theft: unknown</p>
+      <p>KSR: Not provided</p>
 
-      {/* History with filter */}
-      <section style={{ marginTop: 28 }}>
-        <History vin={vin} />
-      </section>
+      <History vin={vin} />
     </div>
   );
 }

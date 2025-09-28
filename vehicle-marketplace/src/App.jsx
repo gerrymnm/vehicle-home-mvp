@@ -1,36 +1,23 @@
+// Full file: vehicle-marketplace/src/App.jsx
 import React from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import MarketHome from "./pages/MarketHome.jsx";
-import Search from "./pages/Search.jsx";
-import VehicleHome from "./pages/VehicleHome.jsx";
-import DealerDashboard from "./pages/DealerDashboard.jsx";
-import Login from "./pages/Login.jsx";
-import Register from "./pages/Register.jsx";
-import { AuthProvider, RequireAuth } from "./lib/auth.jsx";
-import Header from "./components/Header.jsx";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import VinLoader from "./components/VinLoader";
+import Search from "./pages/Search";
+import VehicleDetails from "./pages/VehicleDetails";
 
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Header />
+    <BrowserRouter>
+      <div style={{ padding: 12 }}>
+        <VinLoader />
+        <h1 style={{ marginTop: 0 }}>Vehicle Marketplace</h1>
         <Routes>
-          <Route path="/" element={<MarketHome />} />
+          <Route path="/" element={<Navigate to="/search" replace />} />
           <Route path="/search" element={<Search />} />
-          <Route path="/vehicles/:vin" element={<VehicleHome />} />
-          <Route
-            path="/dealer"
-            element={
-              <RequireAuth roles={["dealer", "admin"]}>
-                <DealerDashboard />
-              </RequireAuth>
-            }
-          />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="*" element={<div style={{ padding: 24 }}>Not Found</div>} />
+          <Route path="/vehicles/:vin" element={<VehicleDetails />} />
+          <Route path="*" element={<p>Not found</p>} />
         </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+      </div>
+    </BrowserRouter>
   );
 }

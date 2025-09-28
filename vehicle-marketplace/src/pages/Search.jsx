@@ -1,128 +1,116 @@
+// Full file: vehicle-marketplace/src/pages/Search.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import api from "../lib/api.js";
+import { searchVehicles } from "../lib/api";
 
 export default function Search() {
   const [sp, setSp] = useSearchParams();
-  const q = (sp.get("q") || "").trim();
-  const page = Number(sp.get("page") || 1);
+  const qParam = sp.get("q") ?? "";
+  const pageParam = Number(sp.get("page") || "1");
 
+  const [q, setQ] = useState(qParam);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [results, setResults] = useState([]);
-  const [meta, setMeta] = useState({ count: 0, total: 0, totalPages: 0 });
+  const [err, setErr] = useState("");
+  const [data, setData] = useState({ results: [], totalPages: 1, page: 1 });
 
-  // Simple helper so we can update URL query params
-  const updateQuery = (nextQ) => {
-    const next = new URLSearchParams(sp);
-    if (nextQ) next.set("q", nextQ);
-    else next.delete("q");
-    next.set("page", "1");
-    setSp(next, { replace: false });
-  };
+  const canSearch = useMemo(() => q.trim().length > 0, [q]);
 
-  const doSearch = async () => {
-    if (!q) {
-      setResults([]);
-      setMeta({ count: 0, total: 0, totalPages: 0 });
-      setError("");
+  useEffect(() => {
+    // sync url -> input
+    setQ(qParam);
+  }, [qParam]);
+
+  useEffect(() => {
+    // fetch when q/page in URL change
+    const term = qParam.trim();
+    if (!term) {
+      setData({ results: [], totalPages: 1, page: 1 });
+      setErr("");
       return;
     }
-
-    setLoading(true);
-    setError("");
-    try {
-      // Warm-up ping first (helps with free Render cold start)
-      try { await api.health(); } catch {}
-
-      const r = await api.search(q, page, 20);
-
-      // Validate shape strictly; if not JSON with `results`, surface as error
-      if (!r || !Array.isArray(r.results)) {
-        // Show a helpful snippet of whatever we got back
-        const snippet =
-          typeof r === "object" ? JSON.stringify(r).slice(0, 200) : String(r).slice(0, 200);
-        throw new Error(`Unexpected response: ${snippet}`);
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      setErr("");
+      try {
+        const resp = await searchVehicles({ q: term, page: pageParam, pageSize: 20 });
+        setData({
+          results: resp.results ?? [],
+          totalPages: resp.totalPages ?? 1,
+          page: resp.query?.page ?? pageParam,
+        });
+      } catch (e) {
+        setErr(String(e.message || e));
+        setData({ results: [], totalPages: 1, page: 1 });
+      } finally {
+        if (alive) setLoading(false);
       }
+    })();
+    return () => { alive = false; };
+  }, [qParam, pageParam]);
 
-      setResults(r.results);
-      setMeta({
-        count: Number(r.count ?? r.results?.length ?? 0),
-        total: Number(r.total ?? r.results?.length ?? 0),
-        totalPages: Number(r.totalPages ?? 1),
-      });
-    } catch (e) {
-      setResults([]);
-      setMeta({ count: 0, total: 0, totalPages: 0 });
-      setError(e?.message || "Search failed");
-    } finally {
-      setLoading(false);
-    }
-  };
+  function submit(e) {
+    e?.preventDefault();
+    setSp(prev => {
+      const p = new URLSearchParams(prev);
+      if (q.trim()) p.set("q", q.trim()); else p.delete("q");
+      p.set("page", "1");
+      return p;
+    }, { replace: false });
+  }
 
-  // Run search whenever q/page changes
-  useEffect(() => {
-    doSearch();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, page]);
-
-  // Small form state (controlled input)
-  const [text, setText] = useState(q);
-  useEffect(() => setText(q), [q]);
-
-  const apiBase = useMemo(() => api.base, []);
+  function gotoPage(p) {
+    setSp(prev => {
+      const s = new URLSearchParams(prev);
+      s.set("page", String(p));
+      if (!s.get("q")) s.set("q", q.trim());
+      return s;
+    });
+  }
 
   return (
-    <div style={{ maxWidth: 800, margin: "32px auto", padding: "0 16px" }}>
+    <div>
       <h2>Find your next vehicle</h2>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          updateQuery(text.trim());
-        }}
-        style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}
-      >
+      <form onSubmit={submit} style={{ display: "flex", gap: 8, alignItems: "center", maxWidth: 820 }}>
         <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Mazda, Accord, Grand Cherokee"
-          style={{ flex: 1, padding: "6px 10px" }}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="make, model, trim…"
+          aria-label="search"
+          style={{ flex: 1 }}
         />
-        <button type="submit" disabled={loading} style={{ padding: "6px 12px" }}>
-          {loading ? "Searching..." : "Search"}
-        </button>
+        <button type="submit" disabled={!canSearch}>Search</button>
       </form>
 
-      {/* Tiny diagnostics so we can see what URL the frontend is using */}
-      <div style={{ fontSize: 12, color: "#666", marginBottom: 12 }}>
-        API: <code>{apiBase}</code> • Query: <code>{q || "(empty)"}</code> • Page: <code>{page}</code>
-      </div>
+      <p style={{ fontSize: 12, opacity: 0.7 }}>Try: Mazda, Accord, Grand Cherokee</p>
 
-      {error && (
-        <p style={{ color: "crimson", marginTop: 8 }}>
-          <strong>Error:</strong> {error}
-        </p>
-      )}
+      {loading && <p>Loading…</p>}
+      {err && <p style={{ color: "crimson" }}>Error: {err}</p>}
+      {!loading && !err && data.results.length === 0 && <p>No results.</p>}
 
-      {!error && !loading && results.length === 0 && q && <p>No results.</p>}
+      <ul style={{ paddingLeft: 18 }}>
+        {data.results.map((r) => (
+          <li key={r.vin} style={{ marginBottom: 8 }}>
+            <Link to={`/vehicles/${r.vin}`}>
+              {r.title ?? [r.year, r.make, r.model, r.trim].filter(Boolean).join(" ")}
+            </Link>
+            <br />
+            <span style={{ fontSize: 12, opacity: 0.8 }}>
+              VIN: {r.vin} • {r.mileage?.toLocaleString?.() ?? r.mileage} miles • {r.location} <br />
+              ${Number(r.price ?? 0).toLocaleString()}
+            </span>
+          </li>
+        ))}
+      </ul>
 
-      {!error && results.length > 0 && (
-        <ul style={{ listStyle: "none", padding: 0, marginTop: 16 }}>
-          {results.map((v) => (
-            <li key={v.vin} style={{ marginBottom: 16 }}>
-              <Link to={`/vehicles/${encodeURIComponent(v.vin)}`} style={{ fontWeight: "bold" }}>
-                {v.title || `${v.year ?? ""} ${v.make ?? ""} ${v.model ?? ""} ${v.trim ?? ""}`.trim()}
-              </Link>
-              <div style={{ fontSize: 13, color: "#444" }}>
-                VIN: {v.vin}
-                {typeof v.mileage === "number" ? ` • ${v.mileage.toLocaleString()} miles` : ""}
-                {typeof v.price === "number" ? ` • $${v.price.toLocaleString()}` : ""}
-                {v.location ? ` • ${v.location}` : ""}
-              </div>
-            </li>
-          ))}
-        </ul>
+      {/* Pagination */}
+      {data.totalPages > 1 && (
+        <div style={{ display: "flex", gap: 8 }}>
+          <button disabled={data.page <= 1} onClick={() => gotoPage(data.page - 1)}>Prev</button>
+          <span>Page {data.page} / {data.totalPages}</span>
+          <button disabled={data.page >= data.totalPages} onClick={() => gotoPage(data.page + 1)}>Next</button>
+        </div>
       )}
     </div>
   );
