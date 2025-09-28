@@ -1,114 +1,101 @@
 // Full file: vehicle-marketplace/src/pages/Search.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { searchVehicles } from "../lib/api";
+import api from "../lib/api.js";
+
+const wrap = {
+  maxWidth: 900,
+  margin: "24px auto",
+  padding: "0 16px",
+};
+
+const h1 = { fontSize: "24px", fontWeight: 700, margin: "8px 0 16px" };
+const input = { width: "100%", maxWidth: 560, padding: "8px" };
+const btn = { padding: "8px 12px", marginLeft: 8, cursor: "pointer" };
+const hint = { fontSize: 12, color: "#666", margin: "8px 0 16px" };
+const errorStyle = { color: "#b00020", marginTop: 12 };
 
 export default function Search() {
-  const [sp, setSp] = useSearchParams();
-  const qParam = sp.get("q") ?? "";
-  const pageParam = Number(sp.get("page") || "1");
+  const [params, setParams] = useSearchParams();
+  const initialQ = params.get("q") || "";
+  const initialPage = Number(params.get("page") || 1);
 
-  const [q, setQ] = useState(qParam);
+  const [q, setQ] = useState(initialQ);
+  const [page, setPage] = useState(initialPage);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
-  const [data, setData] = useState({ results: [], totalPages: 1, page: 1 });
+  const [rows, setRows] = useState([]);
 
-  const canSearch = useMemo(() => q.trim().length > 0, [q]);
+  async function runSearch(nextQ, nextPage = 1) {
+    setLoading(true);
+    setErr("");
+    try {
+      const resp = await api.searchVehicles(nextQ, nextPage);
+      // Expect shape: { ok: true, results: [...] }
+      if (!resp || resp.ok === false) {
+        // backend error path (shape may include .error)
+        throw new Error(resp?.error || "Search failed");
+      }
+      const results = Array.isArray(resp.results) ? resp.results : [];
+      setRows(results);
+    } catch (e) {
+      setRows([]);
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
 
-  useEffect(() => { setQ(qParam); }, [qParam]);
+  function onSubmit(e) {
+    e.preventDefault();
+    const nextQ = q.trim();
+    const nextPage = 1;
+    setParams({ q: nextQ, page: String(nextPage) });
+    setPage(nextPage);
+    runSearch(nextQ, nextPage);
+  }
 
   useEffect(() => {
-    const term = qParam.trim();
-    if (!term) {
-      setData({ results: [], totalPages: 1, page: 1 });
-      setErr("");
-      return;
-    }
-    let alive = true;
-    (async () => {
-      setLoading(true);
-      setErr("");
-      try {
-        const resp = await searchVehicles({ q: term, page: pageParam, pageSize: 20 });
-        setData({
-          results: resp.results ?? [],
-          totalPages: resp.totalPages ?? 1,
-          page: resp.query?.page ?? pageParam,
-        });
-      } catch (e) {
-        setErr(String(e.message || e));
-        setData({ results: [], totalPages: 1, page: 1 });
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    return () => { alive = false; };
-  }, [qParam, pageParam]);
-
-  function submit(e) {
-    e?.preventDefault();
-    setSp(prev => {
-      const p = new URLSearchParams(prev);
-      if (q.trim()) p.set("q", q.trim()); else p.delete("q");
-      p.set("page", "1");
-      return p;
-    });
-  }
-
-  function gotoPage(p) {
-    setSp(prev => {
-      const s = new URLSearchParams(prev);
-      s.set("page", String(p));
-      if (!s.get("q")) s.set("q", q.trim());
-      return s;
-    });
-  }
+    if (!initialQ) return;
+    runSearch(initialQ, initialPage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once on mount
 
   return (
-    <div>
-      <h2>Find your next vehicle</h2>
+    <div style={wrap}>
+      <h1 style={h1}>Find your next vehicle</h1>
 
-      <form onSubmit={submit} className="bar" style={{ maxWidth: 820 }}>
+      <form onSubmit={onSubmit} style={{ display: "flex", alignItems: "center" }}>
         <input
+          style={input}
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="make, model, trim…"
-          aria-label="search"
-          style={{ flex: 1, minWidth: 260 }}
+          placeholder="Search by make, model, VIN…"
+          aria-label="Search vehicles"
         />
-        <button type="submit" disabled={!canSearch}>Search</button>
+        <button style={btn} type="submit">Search</button>
       </form>
 
-      <p className="muted" style={{ fontSize: 12 }}>Try: Mazda, Accord, Grand Cherokee</p>
+      <div style={hint}>Try: Mazda, Accord, Grand Cherokee</div>
 
-      {loading && <p>Loading…</p>}
-      {err && <p style={{ color: "crimson" }}>Error: {err}</p>}
-      {!loading && !err && data.results.length === 0 && <p>No results.</p>}
+      {loading && <div>Loading…</div>}
+      {!loading && err && <div style={errorStyle}>Error: {err}</div>}
 
-      <ul style={{ paddingLeft: 18 }}>
-        {data.results.map((r) => (
-          <li key={r.vin} style={{ marginBottom: 10 }}>
-            <Link to={`/vehicles/${r.vin}`}>
-              {r.title ?? [r.year, r.make, r.model, r.trim].filter(Boolean).join(" ")}
-            </Link>
-            <br />
-            <span className="muted" style={{ fontSize: 12 }}>
-              VIN: {r.vin}
-              {r.mileage ? <> • {Number(r.mileage).toLocaleString()} miles</> : null}
-              {r.location ? <> • {r.location}</> : null}
-              {r.price ? <> • ${Number(r.price).toLocaleString()}</> : null}
-            </span>
-          </li>
-        ))}
-      </ul>
+      {!loading && !err && rows.length === 0 && <div>No results.</div>}
 
-      {/* Pagination */}
-      {data.totalPages > 1 && (
-        <div className="bar">
-          <button disabled={data.page <= 1} onClick={() => gotoPage(data.page - 1)}>Prev</button>
-          <span>Page {data.page} / {data.totalPages}</span>
-          <button disabled={data.page >= data.totalPages} onClick={() => gotoPage(data.page + 1)}>Next</button>
-        </div>
+      {!loading && !err && rows.length > 0 && (
+        <ul>
+          {rows.map((r) => (
+            <li key={r.vin}>
+              <Link to={`/vehicles/${encodeURIComponent(r.vin)}`}>
+                {r.title || `${r.year} ${r.make} ${r.model}${r.trim ? ` ${r.trim}` : ""}`}
+              </Link>
+              <div style={{ fontSize: 12, color: "#555" }}>
+                VIN: {r.vin} • {r.mileage?.toLocaleString?.() ?? r.mileage ?? "—"} miles • {r.location ?? "—"} • {r.price ? `$${Number(r.price).toLocaleString()}` : "—"}
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
