@@ -1,145 +1,108 @@
 // Full file: vehicle-marketplace/src/lib/api.js
 
-// ---- Config ---------------------------------------------------------------
+const BASE =
+  import.meta.env.VITE_API_BASE?.trim() ||
+  process.env.VITE_API_BASE?.trim() ||
+  "https://vehicle-home-mvp.onrender.com/api";
 
-export const API_BASE =
-  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_BASE) ||
-  "https://vehicle-home-mvp.onrender.com/api"; // fallback to Render API
-
-// Token helper (kept local to avoid circular import with lib/auth.js)
-const TOKEN_KEY = "vh_token";
-function getToken() {
-  try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; }
-}
-
-// Build URL with optional query params
-function makeUrl(path, params) {
-  const u = new URL(path.replace(/^\//, ""), API_BASE + "/");
-  if (params && typeof params === "object") {
-    Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== null && v !== "") u.searchParams.set(k, String(v));
-    });
-  }
-  return u.toString();
-}
-
-// Core fetch wrapper
-async function request(path, { method = "GET", body, headers = {}, auth = false } = {}) {
-  const h = {
-    Accept: "application/json",
-    ...headers,
-  };
-
-  // JSON body?
-  let payload;
-  if (body !== undefined) {
-    h["Content-Type"] = "application/json";
-    payload = JSON.stringify(body);
-  }
-
-  // Bearer token if requested
-  if (auth) {
-    const t = getToken();
-    if (t) h.Authorization = `Bearer ${t}`;
-  }
-
-  const res = await fetch(path, {
-    method,
-    headers: h,
-    body: payload,
-    mode: "cors",
-    credentials: "omit",
+/* ---------- tiny HTTP helper ---------- */
+async function http(path, options = {}) {
+  const url = path.startsWith("http") ? path : `${BASE}${path}`;
+  const res = await fetch(url, {
+    method: options.method || "GET",
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+    credentials: "include", // allow cookies if we add auth later
   });
 
-  const ct = res.headers.get("content-type") || "";
-  const isJson = ct.includes("application/json");
-  const data = isJson ? await res.json() : await res.text();
-
-  if (!res.ok) {
-    const msg = isJson ? (data?.error || data?.message || `HTTP ${res.status}`) : String(data);
-    throw new Error(msg);
+  // Try JSON first; if HTML came back (e.g., an error page), throw a helpful error.
+  const text = await res.text();
+  try {
+    const data = text ? JSON.parse(text) : {};
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+  } catch {
+    if (!res.ok) {
+      throw new Error(`Unexpected response (HTTP ${res.status}): ${text.slice(0, 200)}`);
+    }
+    throw new Error("Response was not JSON.");
   }
-  return data;
 }
 
-// Convenience methods
-async function get(path, params, opts) {
-  const url = makeUrl(path, params);
-  return request(url, { method: "GET", ...(opts || {}) });
-}
-async function post(path, body, opts) {
-  const url = makeUrl(path);
-  return request(url, { method: "POST", body, ...(opts || {}) });
+/* ---------- canonical API (explicit names) ---------- */
+export async function searchVehicles(q = "", page = 1) {
+  const params = new URLSearchParams({ q, page: String(page) });
+  return http(`/search?${params.toString()}`);
 }
 
-// ---- Vehicles + Search ----------------------------------------------------
-
-export async function searchVehicles({ q = "", page = 1, pageSize = 20, dir = "asc" } = {}) {
-  return get("/search", { q, page, pageSize, dir });
-}
-
-export async function getVehicleByVin(vin) {
-  if (!vin) throw new Error("vin_required");
-  return get(`/vehicles/${encodeURIComponent(vin)}`);
+export async function getVehicle(vin) {
+  if (!vin) throw new Error("VIN is required");
+  return http(`/vehicles/${encodeURIComponent(vin)}`);
 }
 
 export async function getVehiclePhotos(vin) {
-  if (!vin) throw new Error("vin_required");
-  return get(`/vehicles/${encodeURIComponent(vin)}/photos`);
+  if (!vin) throw new Error("VIN is required");
+  return http(`/vin/photos?vin=${encodeURIComponent(vin)}`);
 }
 
 export async function getVehicleHistory(vin, type = "all") {
-  if (!vin) throw new Error("vin_required");
-  return get(`/vehicles/${encodeURIComponent(vin)}/history`, { type });
+  if (!vin) throw new Error("VIN is required");
+  const params = new URLSearchParams({ vin, type });
+  return http(`/vin/history?${params.toString()}`);
 }
 
-// ---- Auth -----------------------------------------------------------------
-
-export async function authLogin({ email, password }) {
-  return post("/auth/login", { email, password });
+/* ---------- auth helpers (stubs for now) ---------- */
+export async function signin(email, password) {
+  return http("/auth/login", { method: "POST", body: { email, password } });
+}
+export async function signup(payload) {
+  return http("/auth/register", { method: "POST", body: payload });
+}
+export async function me() {
+  return http("/auth/me");
+}
+export async function signout() {
+  return http("/auth/logout", { method: "POST" });
 }
 
-export async function authRegister({ name, email, password }) {
-  return post("/auth/register", { name, email, password });
+/* ---------- compatibility aliases ---------- */
+/* These give you the short names your UI uses: api.vehicle(), api.photos(), api.history(), api.search() */
+export async function search(q, page = 1) {
+  return searchVehicles(q, page);
+}
+export async function vehicle(vin) {
+  return getVehicle(vin);
+}
+export async function photos(vin) {
+  return getVehiclePhotos(vin);
+}
+export async function history(vin, type = "all") {
+  return getVehicleHistory(vin, type);
 }
 
-export async function authMe() {
-  return get("/auth/me", undefined, { auth: true });
-}
-
-// ---- Dealer (placeholder) -------------------------------------------------
-
-export async function dealerInventory({ page = 1, pageSize = 25 } = {}) {
-  const url = makeUrl("/dealer/inventory", { page, pageSize });
-  try {
-    const data = await request(url, { method: "GET", auth: true });
-    if (data && typeof data === "object") return data;
-  } catch {
-    // swallow if endpoint not present or auth not configured yet
-  }
-  return { ok: true, items: [], page, totalPages: 1, total: 0 };
-}
-
-// ---- Export default API surface ------------------------------------------
-
+/* ---------- default export collects everything ---------- */
 const api = {
-  API_BASE,
-  // low-level
-  get,
-  post,
-  // search & vehicles
+  BASE,
+  http,
+  // explicit
   searchVehicles,
-  getVehicleByVin,
+  getVehicle,
   getVehiclePhotos,
   getVehicleHistory,
+  // aliases used by pages/components
+  search,
+  vehicle,
+  photos,
+  history,
   // auth
-  authLogin,
-  authRegister,
-  authMe,
-  // dealer
-  dealerInventory,
+  signin,
+  signup,
+  me,
+  signout,
 };
 
 export default api;
-// also export a named `api` for files that do `import { api } from "../lib/api"`
-export { api };
+export { api }; // also export named, so `import { api }` works

@@ -1,122 +1,129 @@
-import React, { useEffect, useState } from "react";
+// Full file: vehicle-marketplace/src/pages/VehicleHome.jsx
+import React, { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api } from "../lib/api.js";
+import api from "../lib/api.js"; // default import; file also provides named { api }
 
 const h2 = { fontSize: "18px", margin: "18px 0 8px", fontWeight: 600 };
-const small = { fontSize: "13px", color: "#444", margin: "2px 0" };
-const errCss = { color: "#b00020", marginTop: 16 };
+const small = { fontSize: "12px", color: "#666" };
 
 export default function VehicleHome() {
   const { vin } = useParams();
+
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
   const [vehicle, setVehicle] = useState(null);
   const [photos, setPhotos] = useState([]);
   const [history, setHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
 
   useEffect(() => {
-    let on = true;
-    (async () => {
+    let cancelled = false;
+
+    async function run() {
       setLoading(true);
-      setErr("");
+      setErr(null);
       try {
-        const v = await api.vehicle(vin);
-        const vObj = v?.vehicle ?? v;
-        if (on) setVehicle(vObj || null);
+        // details
+        const v = await api.vehicle(vin); // alias calls getVehicle
+        if (cancelled) return;
 
-        try {
-          const ph = await api.photos(vin);
-          if (on) setPhotos(Array.isArray(ph?.photos) ? ph.photos : []);
-        } catch { if (on) setPhotos([]); }
+        // photos + history in parallel
+        const [ph, hi] = await Promise.all([
+          api.photos(vin).catch(() => ({ ok: true, photos: [] })), // tolerate absence
+          api.history(vin, "all").catch(() => ({ ok: true, events: [] })),
+        ]);
 
-        try {
-          const h = await api.history(vin, "all");
-          if (on) setHistory(Array.isArray(h?.events) ? h.events : []);
-        } catch { if (on) setHistory([]); }
+        if (cancelled) return;
+        setVehicle(v?.vehicle || v?.data || v || null);
+        setPhotos(ph?.photos || []);
+        setHistory(hi?.events || []);
       } catch (e) {
-        if (on) setErr(e.message || String(e));
+        if (!cancelled) setErr(e.message || String(e));
       } finally {
-        if (on) setLoading(false);
+        if (!cancelled) setLoading(false);
       }
-    })();
-    return () => { on = false; };
+    }
+
+    run();
+    return () => { cancelled = true; };
   }, [vin]);
 
-  if (loading) return <p style={small}>Loading…</p>;
+  const title = useMemo(() => {
+    if (!vehicle) return "";
+    const { year, make, model, trim } = vehicle;
+    return [year, make, model, trim].filter(Boolean).join(" ");
+  }, [vehicle]);
 
-  if (err) {
-    return (
-      <div>
-        <p><Link to={`/search?q=${encodeURIComponent(vin ?? "")}`}>&larr; Back to search</Link></p>
-        <p style={errCss}>Error: {err}</p>
-      </div>
-    );
-  }
-
-  if (!vehicle) {
-    return (
-      <div>
-        <p><Link to="/search">&larr; Back to search</Link></p>
-        <p style={errCss}>No vehicle found.</p>
-      </div>
-    );
-  }
-
-  const { year, make, model, trim, price, mileage, location, status } = vehicle;
+  if (loading) return <div style={{ padding: 24 }}>Loading…</div>;
+  if (err) return (
+    <div style={{ padding: 24, color: "crimson" }}>Error: {err}</div>
+  );
+  if (!vehicle) return <div style={{ padding: 24 }}>Not found.</div>;
 
   return (
-    <div>
-      <p><Link to={`/search?q=${encodeURIComponent(make || "")}`}>&larr; Back to search</Link></p>
+    <div style={{ maxWidth: 980, margin: "0 auto", padding: "16px 20px" }}>
+      <div style={{ marginBottom: 8 }}>
+        <Link to="/search">← Back to search</Link>
+      </div>
 
-      <h2 style={{ fontSize: 22, margin: "10px 0 6px" }}>
-        {year} {make} {model} {trim}
-      </h2>
-      <p style={small}>
-        VIN: {vin} • {price ? `$${Number(price).toLocaleString()}` : "—"} •{" "}
-        {mileage ? `${Number(mileage).toLocaleString()} miles` : "—"} •{" "}
-        {location || "—"}
+      <h1 style={{ fontSize: 22, margin: "8px 0 4px" }}>{title}</h1>
+      <p style={{ margin: 0 }}>
+        <strong>VIN:</strong> {vehicle.vin}
+        {vehicle.price ? ` • $${Number(vehicle.price).toLocaleString()}` : ""}
+        {vehicle.mileage ? ` • ${Number(vehicle.mileage).toLocaleString()} miles` : ""}
+        {vehicle.location ? ` • ${vehicle.location}` : ""}
       </p>
-      <p style={small}>Status: {status ? String(status) : "—"}</p>
+      <p style={{ ...small, marginTop: 6 }}>
+        Status: {vehicle.in_stock ? "in stock" : "not in stock"}
+      </p>
 
-      <div style={{ marginTop: 16 }}>
-        <h3 style={h2}>Photos</h3>
-        {photos.length === 0 ? (
-          <p style={small}>No photos yet.</p>
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, 160px)", gap: 12 }}>
-            {photos.map((src, i) => (
-              <img key={i} src={src} alt={`photo ${i+1}`} style={{ width: 160, height: 100, objectFit: "cover", border: "1px solid #eee" }} />
-            ))}
-          </div>
-        )}
-      </div>
+      <h2 style={h2}>Photos</h2>
+      {photos.length === 0 ? (
+        <p style={small}>No photos yet.</p>
+      ) : (
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          {photos.map((src, i) => (
+            <img
+              key={i}
+              src={src}
+              alt={`Photo ${i + 1}`}
+              style={{ width: 280, height: 180, objectFit: "cover", borderRadius: 6 }}
+            />
+          ))}
+        </div>
+      )}
 
-      <div style={{ marginTop: 16 }}>
-        <h3 style={h2}>Lien</h3>
-        <p style={small}>No active lien reported.</p>
+      <h2 style={h2}>Lien</h2>
+      <p style={small}>No active lien reported.</p>
 
-        <h3 style={h2}>Dealership Inspection</h3>
-        <p style={small}>Not provided.</p>
+      <h2 style={h2}>Dealership Inspection</h2>
+      <p style={small}>Not provided.</p>
 
-        <h3 style={h2}>Compliance & Records</h3>
-        <p style={small}>Smog: unknown</p>
-        <p style={small}>NMVTIS: brands unknown • Theft: unknown</p>
-        <p style={small}>KSR: Not provided</p>
-      </div>
+      <h2 style={h2}>Compliance & Records</h2>
+      <p style={small}>
+        Smog: unknown • NMVTIS: brands unknown • Theft: unknown<br />
+        KSR: Not provided
+      </p>
 
-      <div style={{ marginTop: 16 }}>
-        <h3 style={h2}>History</h3>
-        {history.length === 0 ? (
-          <p style={small}>No history yet.</p>
-        ) : (
-          <ul style={{ paddingLeft: 18, margin: 0 }}>
-            {history.map((e, i) => (
-              <li key={i} style={small}>
-                {e.date ?? "—"} • {e.type ?? "event"} • {e.note ?? ""}
-              </li>
-            ))}
-          </ul>
-        )}
+      <h2 style={h2}>History</h2>
+      {history.length === 0 ? (
+        <p style={small}>No history yet.</p>
+      ) : (
+        <ul>
+          {history.map((e, i) => (
+            <li key={i}>
+              <span style={small}>
+                {e.date || e.occurred_at || ""} • {e.type || "event"}
+              </span>{" "}
+              {e.title || e.description || ""}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div style={{ marginTop: 24 }}>
+        <Link to="/search">Search</Link>{" "}
+        <Link to="/dealer" style={{ marginLeft: 12 }}>Dealer</Link>{" "}
+        <Link to="/login" style={{ marginLeft: 12 }}>Login</Link>
       </div>
     </div>
   );
