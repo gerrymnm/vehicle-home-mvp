@@ -1,17 +1,17 @@
 // vehicle-marketplace/src/lib/api.js
 
-// Read the backend base URL from Vite env
+// Backend base URL from Vite env
 const RAW_BASE = import.meta.env.VITE_API_BASE_URL || "";
-const API_BASE = RAW_BASE.replace(/\/+$/, ""); // trim trailing slash if present
+const API_BASE = RAW_BASE.replace(/\/+$/, ""); // trim trailing slash
 
-function buildURL(path, query = undefined) {
+function buildURL(path, query) {
   const url = new URL(
     path.startsWith("/") ? `${API_BASE}${path}` : `${API_BASE}/${path}`
   );
   if (query && typeof query === "object") {
-    Object.entries(query).forEach(([k, v]) => {
+    for (const [k, v] of Object.entries(query)) {
       if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v);
-    });
+    }
   }
   return url.toString();
 }
@@ -22,13 +22,10 @@ async function request(method, path, { query, body } = {}) {
     method,
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
-    // We don't need credentials for public endpoints
     mode: "cors",
   });
 
   const text = await res.text();
-
-  // Try JSON first; if HTML or plain text came back, throw a helpful error
   let data;
   try {
     data = text ? JSON.parse(text) : {};
@@ -45,45 +42,28 @@ async function request(method, path, { query, body } = {}) {
 }
 
 export const api = {
-  /** Search vehicles */
   async search({ q, page = 1, pageSize = 20, dir = "asc" }) {
-    const data = await request("GET", "/api/search", {
-      query: { q, page, pageSize, dir },
-    });
-    // Expected shape: { ok, results: [...] }
-    return data;
+    return request("GET", "/api/search", { query: { q, page, pageSize, dir } });
   },
-
-  /** Get vehicle by VIN */
   async vehicle(vin) {
-    const data = await request("GET", `/api/vehicles/${encodeURIComponent(vin)}`);
-    // Expected shape: { ok, vehicle: {...} }
-    return data;
+    return request("GET", `/api/vehicles/${encodeURIComponent(vin)}`);
   },
-
-  /** Alias to match older code paths */
   async getByVin(vin) {
     return this.vehicle(vin);
   },
-
-  /** Photos for a VIN (mocked for now) */
   async photos(vin) {
-    const data = await request(
-      "GET",
-      `/api/vehicles/${encodeURIComponent(vin)}/photos`
-    );
-    // Expected shape: { ok, photos: [...] }
-    return data;
+    return request("GET", `/api/vehicles/${encodeURIComponent(vin)}/photos`);
   },
-
-  /** History for a VIN, optional type filter: all | maintenance | accident | ownership */
   async history(vin, type = "all") {
-    const data = await request(
-      "GET",
-      `/api/vehicles/${encodeURIComponent(vin)}/history`,
-      { query: { type } }
-    );
-    // Expected shape: { ok, events: [...] }
-    return data;
+    return request("GET", `/api/vehicles/${encodeURIComponent(vin)}/history`, {
+      query: { type },
+    });
   },
 };
+
+// Compatibility aliases for older imports
+export const http = api;            // some files do: import http from "../lib/api.js"
+export const getByVin = api.getByVin;
+
+// Default export so `import api from ...` works
+export default api;
