@@ -3,6 +3,8 @@ import { Link, useParams } from "react-router-dom";
 import api from "../lib/api.js";
 import PhotoGrid from "../components/PhotoGrid.jsx";
 import History from "../components/History.jsx";
+import ComplianceBadges from "../components/ComplianceBadges.jsx";
+import LeadForm from "../components/LeadForm.jsx";
 
 export default function VehicleDetails() {
   const { vin } = useParams();
@@ -19,10 +21,11 @@ export default function VehicleDetails() {
     Promise.all([api.vehicle(vin), api.photos(vin)])
       .then(([v, p]) => {
         if (!alive) return;
-        // backend returns { ok, vehicle, history? } per our routes
         const veh = v?.vehicle ?? v;
         setVehicle(veh || null);
-        setPhotos(Array.isArray(p?.photos) ? p.photos : Array.isArray(p) ? p : []);
+
+        const imgs = Array.isArray(p?.photos) ? p.photos : Array.isArray(p) ? p : [];
+        setPhotos(imgs);
       })
       .catch((e) => alive && setErr(e?.message || "Failed to load vehicle"))
       .finally(() => alive && setLoading(false));
@@ -37,6 +40,15 @@ export default function VehicleDetails() {
   if (!vehicle) return <p>No vehicle found.</p>;
 
   const { year, make, model, trim, price, mileage, location, in_stock } = vehicle;
+
+  // if you later add compliance fields to the backend, map them here;
+  // for now we surface "unknown" which renders neutral badges
+  const compliance = {
+    smog: "unknown",
+    nmvtis: "unknown",
+    theft: "unknown",
+    ksr: "unknown",
+  };
 
   return (
     <div>
@@ -55,33 +67,30 @@ export default function VehicleDetails() {
         {typeof in_stock === "boolean" ? ` • Status: ${in_stock ? "in stock" : "sold"}` : ""}
       </p>
 
-      <section>
+      {/* Photos */}
+      <section style={{ marginTop: 12 }}>
         <h3>Photos</h3>
         <PhotoGrid photos={photos} />
       </section>
 
+      {/* Compliance / Records as badges */}
       <section style={{ marginTop: 20 }}>
-        <h3 style={{ marginBottom: 8 }}>Lien</h3>
-        <p style={{ color: "#666" }}>No active lien reported.</p>
-      </section>
-
-      <section style={{ marginTop: 12 }}>
-        <h3 style={{ marginBottom: 8 }}>Dealership Inspection</h3>
-        <p style={{ color: "#666" }}>Not provided.</p>
-      </section>
-
-      <section style={{ marginTop: 12 }}>
         <h3 style={{ marginBottom: 8 }}>Compliance &amp; Records</h3>
-        <p style={{ margin: 0, color: "#666" }}>
-          Smog: unknown
-          <br />
-          NMVTIS: brands unknown • Theft: unknown
-          <br />
-          KSR: Not provided
-        </p>
+        <ComplianceBadges
+          smog={compliance.smog}
+          nmvtis={compliance.nmvtis}
+          theft={compliance.theft}
+          ksr={compliance.ksr}
+        />
       </section>
 
-      <section style={{ marginTop: 20 }}>
+      {/* Seller/lead form */}
+      <section style={{ marginTop: 24 }}>
+        <LeadForm vin={vin} />
+      </section>
+
+      {/* History with filter */}
+      <section style={{ marginTop: 28 }}>
         <History vin={vin} />
       </section>
     </div>

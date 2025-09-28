@@ -1,64 +1,51 @@
-// vehicle-marketplace/src/lib/api.js
+// Simple API client with a default base that works on Vercel + Render
 const BASE =
-  (import.meta?.env?.VITE_API_BASE_URL || process.env.VITE_API_BASE_URL || "").trim() ||
-  "https://vehicle-home-mvp.onrender.com/";
+  (import.meta.env && import.meta.env.VITE_API_BASE_URL
+    ? String(import.meta.env.VITE_API_BASE_URL).replace(/\/$/, "")
+    : "https://vehicle-home-mvp.onrender.com") || "";
 
-// normalize to absolute URL with trailing slash
-const API_BASE = new URL(BASE.endsWith("/") ? BASE : BASE + "/").toString();
-
-async function getJSON(path, params) {
-  const url = new URL(path, API_BASE);
-  if (params && typeof params === "object") {
-    for (const [k, v] of Object.entries(params)) {
-      if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
-    }
-  }
-  const res = await fetch(url.toString(), {
-    method: "GET",
-    mode: "cors",
-    headers: { Accept: "application/json" },
-  });
+async function toJson(res) {
+  const text = await res.text();
   if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    throw new Error(`Unexpected response (${res.status}): ${txt.slice(0, 200)}`);
+    // surface server message when available
+    const msg = text || res.statusText || "Request failed";
+    throw new Error(msg);
   }
-  return res.json();
-}
-
-/**
- * Accepts either:
- *   - search("mazda", 1, 20)
- *   - search({ q: "mazda", page: 1, pageSize: 20 })
- */
-function search(input, pageMaybe, pageSizeMaybe) {
-  let q = "";
-  let page = 1;
-  let pageSize = 20;
-
-  if (typeof input === "object" && input !== null) {
-    q = String(input.q ?? "");
-    page = Number(input.page ?? 1);
-    if (input.pageSize != null) pageSize = Number(input.pageSize);
-  } else {
-    q = String(input ?? "");
-    page = Number(pageMaybe ?? 1);
-    if (pageSizeMaybe != null) pageSize = Number(pageSizeMaybe);
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(text || "Invalid JSON response");
   }
-
-  return getJSON("api/search", { q, page, pageSize });
 }
 
-function vehicle(vin) {
-  return getJSON(`api/vehicles/${encodeURIComponent(vin)}`);
+function get(path) {
+  return fetch(`${BASE}${path}`, { credentials: "include" }).then(toJson);
 }
 
-function photos(vin) {
-  return getJSON(`api/vehicles/${encodeURIComponent(vin)}/photos`);
+function post(path, body) {
+  return fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(body ?? {}),
+  }).then(toJson);
 }
 
-function history(vin, type = "all") {
-  return getJSON(`api/vehicles/${encodeURIComponent(vin)}/history`, { type });
-}
+const api = {
+  base: BASE,
+  // search
+  search: (q, page = 1, pageSize = 20) =>
+    get(`/api/search?q=${encodeURIComponent(q)}&page=${page}&pagesize=${pageSize}`),
 
-export const api = { search, vehicle, photos, history };
+  // vehicles
+  vehicle: (vin) => get(`/api/vehicles/${encodeURIComponent(vin)}`),
+  photos: (vin) => get(`/api/vehicles/${encodeURIComponent(vin)}/photos`),
+  history: (vin, type = "all") =>
+    get(`/api/vehicles/${encodeURIComponent(vin)}/history?type=${encodeURIComponent(type)}`),
+
+  // leads
+  createLead: (vin, payload) => post(`/api/leads`, { vin, ...payload }),
+};
+
 export default api;
+export { get, post, api };
