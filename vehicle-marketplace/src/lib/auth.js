@@ -1,12 +1,12 @@
 // Full file: vehicle-marketplace/src/lib/auth.js
-import { authLogin, authRegister, authMe } from "./api";
+import api, { authLogin, authRegister, authMe } from "./api.js";
 
 const KEY = "vh_token";
-const PROFILE = "vh_user";
 
 export function getToken() {
   try { return localStorage.getItem(KEY) || ""; } catch { return ""; }
 }
+
 export function setToken(t) {
   try {
     if (t) localStorage.setItem(KEY, t);
@@ -14,48 +14,32 @@ export function setToken(t) {
   } catch {}
 }
 
-export function getUser() {
-  try {
-    const raw = localStorage.getItem(PROFILE);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-}
-export function setUser(u) {
-  try {
-    if (u) localStorage.setItem(PROFILE, JSON.stringify(u));
-    else localStorage.removeItem(PROFILE);
-  } catch {}
-}
-
-export async function doRegister({ name, email, password }) {
-  const res = await authRegister({ name, email, password });
-  // If backend returns tokens here, store them; if not, direct to login.
-  if (res?.access) setToken(res.access);
-  if (res?.user) setUser(res.user);
-  return res;
-}
-
-export async function doLogin({ email, password }) {
+export async function login({ email, password }) {
   const res = await authLogin({ email, password });
-  if (res?.access) setToken(res.access);
-  if (res?.user) setUser(res.user);
+  // expect { ok, user, access, refresh } from backend
+  if (!res || res.ok === false) throw new Error(res?.error || "Login failed");
+  if (res.access) setToken(res.access);
   return res;
 }
 
-export async function refreshProfile() {
+export async function register({ name, email, password }) {
+  const res = await authRegister({ name, email, password });
+  if (!res || res.ok === false) throw new Error(res?.error || "Register failed");
+  if (res.access) setToken(res.access);
+  return res;
+}
+
+export async function me() {
   try {
-    const me = await authMe();
-    if (me?.user) setUser(me.user);
-    return me?.user ?? null;
+    const res = await authMe();
+    return res?.user ?? null;
   } catch {
-    // invalid token
-    setToken("");
-    setUser(null);
     return null;
   }
 }
 
 export function logout() {
   setToken("");
-  setUser(null);
 }
+
+export default { login, register, me, logout, getToken, setToken, api };

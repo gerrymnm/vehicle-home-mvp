@@ -1,50 +1,73 @@
 // Full file: vehicle-marketplace/src/pages/DealerDashboard.jsx
 import React, { useEffect, useState } from "react";
-import { logout, getUser } from "../lib/auth";
-import { dealerInventory } from "../lib/api";
+import api from "../lib/api.js";
+import auth from "../lib/auth.js";
+import { Link } from "react-router-dom";
 
 export default function DealerDashboard() {
-  const [user] = useState(getUser());
-  const [inv, setInv] = useState({ items: [], page: 1, pageSize: 25, total: 0, totalPages: 1 });
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(null);
+  const [inv, setInv] = useState({ ok: true, items: [], total: 0, page: 1, totalPages: 1 });
+  const [err, setErr] = useState("");
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      const res = await dealerInventory({});
-      if (alive) { setInv(res); setLoading(false); }
+      setErr("");
+      // who am I
+      const u = await auth.me();
+      if (alive) setUser(u);
+      // inventory (placeholder for now)
+      try {
+        const r = await api.dealerInventory({ page: 1, pageSize: 25 });
+        if (alive) setInv(r);
+      } catch (e) {
+        if (alive) setErr(String(e.message || e));
+      }
     })();
     return () => { alive = false; };
   }, []);
 
   return (
-    <div>
-      <h2>Dealer Dashboard</h2>
-      <p className="muted" style={{ marginTop: -8 }}>Hello{user?.name ? `, ${user.name}` : ""}! {user?.email ? `(${user.email})` : ""}</p>
+    <main className="container">
+      <div className="bar" style={{ justifyContent: "space-between" }}>
+        <h1>Dealer Dashboard</h1>
+        <div style={{ display: "flex", gap: 12 }}>
+          {user ? <span className="muted">Signed in as {user.name || user.email}</span> : (
+            <>
+              <Link to="/login">Login</Link>
+              <span className="muted">/</span>
+              <Link to="/register">Register</Link>
+            </>
+          )}
+        </div>
+      </div>
 
-      <div className="section">
-        <h3>Inventory</h3>
-        {loading ? <p>Loading…</p> : inv.items.length === 0 ? (
-          <p className="muted">No inventory yet. This section is a skeleton and will populate once the backend endpoint is ready.</p>
-        ) : (
-          <ul>
+      {err && <p style={{ color: "crimson" }}>Error: {err}</p>}
+
+      {inv.items.length === 0 ? (
+        <div className="card" style={{ maxWidth: 520 }}>
+          <h3 style={{ marginTop: 0 }}>No inventory yet</h3>
+          <p className="muted">When vehicles are added, they’ll appear here.</p>
+          <p className="muted">Next step will be adding an “Add Vehicle” flow.</p>
+        </div>
+      ) : (
+        <table className="table">
+          <thead>
+            <tr><th>VIN</th><th>Title</th><th>Price</th><th>Mileage</th><th>Status</th></tr>
+          </thead>
+          <tbody>
             {inv.items.map((v) => (
-              <li key={v.vin}>{[v.year, v.make, v.model, v.trim].filter(Boolean).join(" ")} — VIN {v.vin}</li>
+              <tr key={v.vin}>
+                <td><Link to={`/vehicles/${v.vin}`}>{v.vin}</Link></td>
+                <td>{v.title || `${v.year} ${v.make} ${v.model}`}</td>
+                <td>{v.price ? `$${Number(v.price).toLocaleString()}` : "—"}</td>
+                <td>{v.mileage ? `${Number(v.mileage).toLocaleString()} mi` : "—"}</td>
+                <td>{v.in_stock ? "in stock" : "not in stock"}</td>
+              </tr>
             ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="section">
-        <h3>Leads</h3>
-        <p className="muted">Coming soon…</p>
-      </div>
-
-      <div className="section">
-        <button onClick={() => { logout(); window.location.assign("/login"); }}>
-          Log out
-        </button>
-      </div>
-    </div>
+          </tbody>
+        </table>
+      )}
+    </main>
   );
 }

@@ -1,13 +1,10 @@
 // Full file: vehicle-marketplace/src/pages/Login.jsx
 import React, { useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { doLogin } from "../lib/auth";
+import { useNavigate, Link } from "react-router-dom";
+import auth from "../lib/auth.js";
 
 export default function Login() {
   const nav = useNavigate();
-  const loc = useLocation();
-  const redirectTo = loc.state?.redirectTo || "/dealer";
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
@@ -18,8 +15,8 @@ export default function Login() {
     setErr("");
     setBusy(true);
     try {
-      await doLogin({ email, password });
-      nav(redirectTo, { replace: true });
+      await auth.login({ email, password });
+      nav("/dealer"); // send dealers to dashboard for now
     } catch (e2) {
       setErr(String(e2.message || e2));
     } finally {
@@ -28,17 +25,23 @@ export default function Login() {
   }
 
   return (
-    <div style={{ maxWidth: 420 }}>
-      <h2>Log in</h2>
-      <form onSubmit={onSubmit} className="bar" style={{ flexDirection: "column", alignItems: "stretch" }}>
-        <input type="email" placeholder="Email" value={email} onChange={(e)=>setEmail(e.target.value)} required />
-        <input type="password" placeholder="Password" value={password} onChange={(e)=>setPassword(e.target.value)} required />
-        <button type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+    <main className="container">
+      <h1>Login</h1>
+      <form onSubmit={onSubmit} className="card" style={{ maxWidth: 420 }}>
+        <label>Email</label>
+        <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} required />
+
+        <label>Password</label>
+        <input type="password" value={password} onChange={(e)=>setPassword(e.target.value)} required />
+
+        {err && <p style={{ color: "crimson" }}>Error: {err}</p>}
+
+        <button disabled={busy} type="submit">{busy ? "Signing in..." : "Login"}</button>
+
+        <p className="muted" style={{ marginTop: 8 }}>
+          Don’t have an account? <Link to="/register">Register</Link>
+        </p>
       </form>
-      {err && <p style={{ color: "crimson" }}>Error: {err}</p>}
-      <p className="muted" style={{ fontSize: 12 }}>
-        No account? <Link to="/register">Create one</Link>
-      </p>
-    </div>
+    </main>
   );
 }
