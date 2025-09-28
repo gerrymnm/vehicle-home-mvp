@@ -1,36 +1,44 @@
-import React from "react";
-import { useLocation, useNavigate, Link } from "react-router-dom";
-import { useAuth } from "../lib/auth.jsx";
+// Full file: vehicle-marketplace/src/pages/Login.jsx
+import React, { useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { doLogin } from "../lib/auth";
 
 export default function Login() {
-  const { login } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
-  const [form, setForm] = React.useState({ email: "", password: "" });
-  const [err, setErr] = React.useState("");
+  const redirectTo = loc.state?.redirectTo || "/dealer";
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
 
   async function onSubmit(e) {
     e.preventDefault();
     setErr("");
+    setBusy(true);
     try {
-      await login(form.email, form.password);
-      const dest = (loc.state && loc.state.from && loc.state.from.pathname) || "/";
-      nav(dest);
+      await doLogin({ email, password });
+      nav(redirectTo, { replace: true });
     } catch (e2) {
-      setErr("Invalid credentials");
+      setErr(String(e2.message || e2));
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
-    <section style={{maxWidth:420, margin:"32px auto"}}>
-      <h2>Login</h2>
-      <form onSubmit={onSubmit} style={{display:"grid", gap:12}}>
-        <input placeholder="Email" type="email" value={form.email} onChange={e=>setForm({...form, email:e.target.value})}/>
-        <input placeholder="Password" type="password" value={form.password} onChange={e=>setForm({...form, password:e.target.value})}/>
-        {err && <div style={{color:"crimson"}}>{err}</div>}
-        <button>Sign in</button>
+    <div style={{ maxWidth: 420 }}>
+      <h2>Log in</h2>
+      <form onSubmit={onSubmit} className="bar" style={{ flexDirection: "column", alignItems: "stretch" }}>
+        <input type="email" placeholder="Email" value={email} onChange={(e)=>setEmail(e.target.value)} required />
+        <input type="password" placeholder="Password" value={password} onChange={(e)=>setPassword(e.target.value)} required />
+        <button type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
       </form>
-      <div style={{marginTop:8}}>No account? <Link to="/register">Register</Link></div>
-    </section>
+      {err && <p style={{ color: "crimson" }}>Error: {err}</p>}
+      <p className="muted" style={{ fontSize: 12 }}>
+        No account? <Link to="/register">Create one</Link>
+      </p>
+    </div>
   );
 }

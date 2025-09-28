@@ -1,48 +1,42 @@
-import React from "react";
-import { useNavigate, Link } from "react-router-dom";
-import { useAuth } from "../lib/auth.jsx";
+// Full file: vehicle-marketplace/src/pages/Register.jsx
+import React, { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { doRegister } from "../lib/auth";
 
 export default function Register() {
-  const { register } = useAuth();
   const nav = useNavigate();
-  const [form, setForm] = React.useState({
-    email: "", password: "", role: "consumer", dealerName: ""
-  });
-  const [err, setErr] = React.useState("");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [err, setErr] = useState("");
+  const [ok, setOk] = useState("");
 
   async function onSubmit(e) {
     e.preventDefault();
-    setErr("");
+    setErr(""); setOk("");
     try {
-      const payload = { email: form.email, password: form.password, role: form.role };
-      if (form.role === "dealer") payload.dealerName = form.dealerName;
-      await register(payload);
-      nav("/");
+      await doRegister({ name, email, password });
+      setOk("Account created. You can log in now.");
+      setTimeout(() => nav("/login"), 600);
     } catch (e2) {
-      setErr("Registration failed");
+      setErr(String(e2.message || e2));
     }
   }
 
   return (
-    <section style={{maxWidth:480, margin:"32px auto"}}>
-      <h2>Register</h2>
-      <form onSubmit={onSubmit} style={{display:"grid", gap:12}}>
-        <input placeholder="Email" type="email" value={form.email} onChange={e=>setForm({...form, email:e.target.value})}/>
-        <input placeholder="Password" type="password" value={form.password} onChange={e=>setForm({...form, password:e.target.value})}/>
-        <label>
-          Role:&nbsp;
-          <select value={form.role} onChange={e=>setForm({...form, role:e.target.value})}>
-            <option value="consumer">Consumer</option>
-            <option value="dealer">Dealer</option>
-          </select>
-        </label>
-        {form.role === "dealer" && (
-          <input placeholder="Dealer name" value={form.dealerName} onChange={e=>setForm({...form, dealerName:e.target.value})}/>
-        )}
-        {err && <div style={{color:"crimson"}}>{err}</div>}
-        <button>Create account</button>
+    <div style={{ maxWidth: 480 }}>
+      <h2>Create account</h2>
+      <form onSubmit={onSubmit} className="bar" style={{ flexDirection: "column", alignItems: "stretch" }}>
+        <input placeholder="Name" value={name} onChange={(e)=>setName(e.target.value)} required />
+        <input type="email" placeholder="Email" value={email} onChange={(e)=>setEmail(e.target.value)} required />
+        <input type="password" placeholder="Password" value={password} onChange={(e)=>setPassword(e.target.value)} required />
+        <button type="submit">Create account</button>
       </form>
-      <div style={{marginTop:8}}>Already registered? <Link to="/login">Login</Link></div>
-    </section>
+      {ok && <p style={{ color: "seagreen" }}>{ok}</p>}
+      {err && <p style={{ color: "crimson" }}>Error: {err}</p>}
+      <p className="muted" style={{ fontSize: 12 }}>
+        Already have an account? <Link to="/login">Log in</Link>
+      </p>
+    </div>
   );
 }
