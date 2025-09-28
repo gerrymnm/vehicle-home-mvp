@@ -1,45 +1,34 @@
 // Full file: vehicle-marketplace/src/lib/auth.js
-import api, { authLogin, authRegister, authMe } from "./api.js";
 
-const KEY = "vh_token";
+import api from "./api.js";
 
-export function getToken() {
-  try { return localStorage.getItem(KEY) || ""; } catch { return ""; }
+/**
+ * Thin auth wrappers that delegate to the backend via api.js.
+ * api.js already sets credentials: "include" so cookies (if any) flow.
+ */
+
+export async function login(email, password) {
+  if (!email || !password) throw new Error("Email and password are required");
+  return api.signin(email, password);
 }
 
-export function setToken(t) {
-  try {
-    if (t) localStorage.setItem(KEY, t);
-    else localStorage.removeItem(KEY);
-  } catch {}
-}
-
-export async function login({ email, password }) {
-  const res = await authLogin({ email, password });
-  // expect { ok, user, access, refresh } from backend
-  if (!res || res.ok === false) throw new Error(res?.error || "Login failed");
-  if (res.access) setToken(res.access);
-  return res;
-}
-
-export async function register({ name, email, password }) {
-  const res = await authRegister({ name, email, password });
-  if (!res || res.ok === false) throw new Error(res?.error || "Register failed");
-  if (res.access) setToken(res.access);
-  return res;
+export async function register(payload) {
+  if (!payload?.email || !payload?.password) {
+    throw new Error("Email and password are required");
+  }
+  return api.signup(payload);
 }
 
 export async function me() {
-  try {
-    const res = await authMe();
-    return res?.user ?? null;
-  } catch {
-    return null;
-  }
+  return api.me();
 }
 
-export function logout() {
-  setToken("");
+export async function logout() {
+  return api.signout();
 }
 
-export default { login, register, me, logout, getToken, setToken, api };
+/**
+ * Default export bundling everything, in case callers prefer `auth.login(...)`.
+ */
+const auth = { login, register, me, logout };
+export default auth;
