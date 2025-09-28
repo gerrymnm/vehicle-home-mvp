@@ -1,31 +1,63 @@
-@import "tailwindcss";
+/* Full file: vehicle-marketplace/src/index.css */
 
-:root {
-  color-scheme: light;
-}
-
+/* Base reset-ish */
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
 body {
-  @apply bg-gray-50 text-gray-800 antialiased;
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  line-height: 1.45;
+  color: #111;
+  background: #fafafa;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
+/* Centered container */
 .container {
-  @apply max-w-6xl mx-auto px-4 sm:px-6 lg:px-8;
+  width: 100%;
+  max-width: 960px;        /* page content width */
+  margin: 0 auto;          /* <-- centers the page */
+  padding: 16px;           /* side gutters on mobile */
 }
 
-/* tiny utility for the status dot */
-.dot {
-  @apply inline-block w-2 h-2 rounded-full bg-emerald-500;
+/* Headings */
+h1 { font-size: 1.75rem; margin: 0 0 12px; }
+h2 { font-size: 1.25rem; margin: 16px 0 8px; }
+h3 { font-size: 1.1rem;  margin: 14px 0 8px; }
+small, .muted { color: #666; }
+
+/* Forms */
+input, select, button {
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  background: #fff;
+}
+button {
+  cursor: pointer;
+  border-color: #c8c8c8;
+}
+button:disabled { opacity: .6; cursor: default; }
+
+/* Responsive horizontal bars that wrap on small screens */
+.bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.bar input { min-width: 220px; }
+
+/* Cards / blocks (light touch) */
+.section {
+  margin-top: 18px;
 }
 
-/* card shell */
-.card {
-  @apply bg-white rounded-xl shadow-sm ring-1 ring-black/5;
-}
-
-/* subtle hover row */
-.row {
-  @apply py-3;
-}
-.row + .row {
-  @apply border-t border-gray-200;
+/* Media */
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
 }

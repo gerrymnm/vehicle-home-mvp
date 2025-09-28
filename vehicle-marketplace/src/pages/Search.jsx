@@ -15,13 +15,9 @@ export default function Search() {
 
   const canSearch = useMemo(() => q.trim().length > 0, [q]);
 
-  useEffect(() => {
-    // sync url -> input
-    setQ(qParam);
-  }, [qParam]);
+  useEffect(() => { setQ(qParam); }, [qParam]);
 
   useEffect(() => {
-    // fetch when q/page in URL change
     const term = qParam.trim();
     if (!term) {
       setData({ results: [], totalPages: 1, page: 1 });
@@ -56,7 +52,7 @@ export default function Search() {
       if (q.trim()) p.set("q", q.trim()); else p.delete("q");
       p.set("page", "1");
       return p;
-    }, { replace: false });
+    });
   }
 
   function gotoPage(p) {
@@ -72,18 +68,18 @@ export default function Search() {
     <div>
       <h2>Find your next vehicle</h2>
 
-      <form onSubmit={submit} style={{ display: "flex", gap: 8, alignItems: "center", maxWidth: 820 }}>
+      <form onSubmit={submit} className="bar" style={{ maxWidth: 820 }}>
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="make, model, trim…"
           aria-label="search"
-          style={{ flex: 1 }}
+          style={{ flex: 1, minWidth: 260 }}
         />
         <button type="submit" disabled={!canSearch}>Search</button>
       </form>
 
-      <p style={{ fontSize: 12, opacity: 0.7 }}>Try: Mazda, Accord, Grand Cherokee</p>
+      <p className="muted" style={{ fontSize: 12 }}>Try: Mazda, Accord, Grand Cherokee</p>
 
       {loading && <p>Loading…</p>}
       {err && <p style={{ color: "crimson" }}>Error: {err}</p>}
@@ -91,14 +87,16 @@ export default function Search() {
 
       <ul style={{ paddingLeft: 18 }}>
         {data.results.map((r) => (
-          <li key={r.vin} style={{ marginBottom: 8 }}>
+          <li key={r.vin} style={{ marginBottom: 10 }}>
             <Link to={`/vehicles/${r.vin}`}>
               {r.title ?? [r.year, r.make, r.model, r.trim].filter(Boolean).join(" ")}
             </Link>
             <br />
-            <span style={{ fontSize: 12, opacity: 0.8 }}>
-              VIN: {r.vin} • {r.mileage?.toLocaleString?.() ?? r.mileage} miles • {r.location} <br />
-              ${Number(r.price ?? 0).toLocaleString()}
+            <span className="muted" style={{ fontSize: 12 }}>
+              VIN: {r.vin}
+              {r.mileage ? <> • {Number(r.mileage).toLocaleString()} miles</> : null}
+              {r.location ? <> • {r.location}</> : null}
+              {r.price ? <> • ${Number(r.price).toLocaleString()}</> : null}
             </span>
           </li>
         ))}
@@ -106,7 +104,7 @@ export default function Search() {
 
       {/* Pagination */}
       {data.totalPages > 1 && (
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="bar">
           <button disabled={data.page <= 1} onClick={() => gotoPage(data.page - 1)}>Prev</button>
           <span>Page {data.page} / {data.totalPages}</span>
           <button disabled={data.page >= data.totalPages} onClick={() => gotoPage(data.page + 1)}>Next</button>

@@ -7,20 +7,16 @@ export default function VinLoader() {
   const [vin, setVin] = useState("");
   const nav = useNavigate();
 
-  const onSubmit = (e) => {
+  function onSubmit(e) {
     e.preventDefault();
     const cleaned = vin.trim().toUpperCase();
     if (!cleaned) return;
     nav(`/vehicles/${encodeURIComponent(cleaned)}`);
-  };
+  }
 
   return (
-    <form
-      onSubmit={onSubmit}
-      style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}
-      aria-label="Secured on blockchain"
-    >
-      <span style={{ fontSize: 12 }}>Secured on blockchain</span>
+    <form onSubmit={onSubmit} className="bar" aria-label="Secured on blockchain">
+      <span className="muted" style={{ fontSize: 12 }}>Secured on blockchain</span>
       <select value={role} onChange={(e) => setRole(e.target.value)}>
         <option>Consumer</option>
         <option>Dealer</option>
