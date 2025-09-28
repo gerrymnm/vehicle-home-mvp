@@ -1,122 +1,88 @@
-// Full file: vehicle-marketplace/src/lib/api.js
+// Small API helper for the marketplace frontend
 
-// Hard-coded API base (works without env), but still honors VITE_API_BASE if set:
-const FALLBACK_BASE = "https://vehicle-home-mvp.onrender.com/api";
-const BASE =
-  (import.meta.env.VITE_API_BASE && import.meta.env.VITE_API_BASE.replace(/\/+$/, "")) ||
-  FALLBACK_BASE;
+// Accept either VITE_API_BASE or VITE_API_BASE_URL (no trailing slash)
+const ENV_BASE =
+  (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
+  (import.meta?.env?.VITE_API_BASE_URL && String(import.meta.env.VITE_API_BASE_URL)) ||
+  "";
 
-// --- helpers -------------------------------------------------------------
+// Normalize: remove trailing slash, default to current origin (dev only)
+const BASE = (ENV_BASE || window.location.origin).replace(/\/+$/, "");
 
-async function jsonOrThrow(res) {
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch {}
-  if (!res.ok) {
+// ---- low-level fetcher ------------------------------------------------------
+async function request(path, { method = "GET", params, body, token } = {}) {
+  const url = new URL(`${BASE}${path}`);
+
+  if (params && typeof params === "object") {
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
+    });
+  }
+
+  const headers = { "Accept": "application/json" };
+  let payload;
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    payload = JSON.stringify(body);
+  }
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(url.toString(), { method, headers, body: payload, credentials: "omit" });
+
+  // If the backend returned HTML (e.g., 404 page), throw a readable error
+  const ct = res.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) {
+    const text = await res.text();
+    throw new Error(`Unexpected response (HTTP ${res.status}): ${text.slice(0, 120)}`);
+  }
+
+  const data = await res.json();
+  if (!res.ok || data?.ok === false) {
     const msg = data?.error || `HTTP ${res.status}`;
-    const err = new Error(msg);
-    err.status = res.status;
-    err.body = data ?? text;
-    throw err;
+    throw new Error(msg);
   }
   return data;
 }
 
-function withQuery(url, params) {
-  const u = new URL(url, "http://x");
-  Object.entries(params || {}).forEach(([k, v]) => {
-    if (v === undefined || v === null || v === "") return;
-    u.searchParams.set(k, String(v));
-  });
-  return u.pathname + (u.search || "");
+// ---- public API -------------------------------------------------------------
+export async function searchVehicles({ q, page = 1, pagesize = 20, dir = "asc" } = {}) {
+  return request("/api/search", { params: { q, page, pagesize, dir } });
 }
 
-// --- public API ----------------------------------------------------------
-
-async function searchVehicles(q, page = 1, pagesize = 20) {
-  const path = withQuery(`${BASE}/search`, { q, page, pagesize });
-  const res = await fetch(path, { credentials: "omit" });
-  return jsonOrThrow(res);
+export async function getVehicleByVin(vin) {
+  if (!vin) throw new Error("VIN is required");
+  return request(`/api/vehicles/${encodeURIComponent(vin)}`);
 }
 
-async function vehicle(vin) {
-  const res = await fetch(`${BASE}/vehicles/${encodeURIComponent(vin)}`, {
-    credentials: "omit",
-  });
-  return jsonOrThrow(res);
+export async function getVehiclePhotos(vin) {
+  if (!vin) throw new Error("VIN is required");
+  return request(`/api/vin/photos`, { params: { vin } });
 }
 
-// Backend routes for photos & history are /api/vin/*
-async function vehiclePhotos(vin) {
-  const path = withQuery(`${BASE}/vin/photos`, { vin });
-  try {
-    const res = await fetch(path, { credentials: "omit" });
-    const data = await jsonOrThrow(res);
-    const photos = Array.isArray(data?.photos) ? data.photos : [];
-    return { ok: true, photos };
-  } catch (e) {
-    return { ok: false, error: e.message, photos: [] };
-  }
+export async function getVehicleHistory(vin, type = "all") {
+  if (!vin) throw new Error("VIN is required");
+  return request(`/api/vin/history`, { params: { vin, type } });
 }
 
-async function getVehicleHistory(vin, type = "all") {
-  const path = withQuery(`${BASE}/vin/history`, { vin, type });
-  try {
-    const res = await fetch(path, { credentials: "omit" });
-    if (res.status === 404) return { ok: true, type, count: 0, events: [] };
-    const data = await jsonOrThrow(res);
-    const events = Array.isArray(data?.events) ? data.events : [];
-    return { ok: true, type: data?.type ?? type, count: events.length, events };
-  } catch (e) {
-    return { ok: false, error: e.message, type, count: 0, events: [] };
-  }
+// ---- auth endpoints (used by src/lib/auth.js) -------------------------------
+export async function authRegister({ email, password }) {
+  return request("/api/auth/register", { method: "POST", body: { email, password } });
+}
+export async function authLogin({ email, password }) {
+  return request("/api/auth/login", { method: "POST", body: { email, password } });
+}
+export async function authMe(token) {
+  return request("/api/auth/me", { token });
 }
 
-// --- auth ---------------------------------------------------------------
-
-async function authLogin(email, password) {
-  const res = await fetch(`${BASE}/auth/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  return jsonOrThrow(res);
-}
-
-async function authRegister(email, password) {
-  const res = await fetch(`${BASE}/auth/register`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  return jsonOrThrow(res);
-}
-
-async function authMe(token) {
-  const res = await fetch(`${BASE}/auth/me`, {
-    headers: token ? { authorization: `Bearer ${token}` } : undefined,
-  });
-  return jsonOrThrow(res);
-}
-
+// Convenience default export with the base URL visible (handy for debugging)
 const api = {
-  searchVehicles,
-  vehicle,
-  vehiclePhotos,
-  getVehicleHistory,
-  authLogin,
-  authRegister,
-  authMe,
+  BASE,
+  search: searchVehicles,
+  vehicle: getVehicleByVin,
+  photos: getVehiclePhotos,
+  history: getVehicleHistory,
+  auth: { register: authRegister, login: authLogin, me: authMe },
 };
 
 export default api;
-export {
-  searchVehicles,
-  vehicle,
-  vehiclePhotos,
-  getVehicleHistory,
-  authLogin,
-  authRegister,
-  authMe,
-  api,
-};
