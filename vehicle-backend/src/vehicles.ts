@@ -1,214 +1,252 @@
-// Full file: vehicle-backend/src/vehicles.ts
+// vehicle-backend/src/vehicles.ts
 import { Router, Request, Response } from "express";
-import { sql } from "./db";
+
+// ------------ Config ------------
+const CSV_URL =
+  process.env.INVENTORY_CSV ||
+  "https://docs.google.com/spreadsheets/d/12oHSYTIMAprpCoK7cnwY7D6kYAOpqDdjV_am-xPC31s/export?format=csv&gid=0";
+
+const REFRESH_MS = Number(process.env.INVENTORY_REFRESH_MS || 10 * 60 * 1000); // 10m
+// --------------------------------
+
+type InvRow = {
+  vin: string;
+  year?: number;
+  make?: string;
+  model?: string;
+  trim?: string;
+  mileage?: number;
+  location?: string;
+  price?: number;
+  status?: string; // "in stock" | "not in stock" | etc
+  images?: string[];
+  // keep raw in case we add properties later
+  [k: string]: any;
+};
 
 const router = Router();
+let INVENTORY: InvRow[] = [];
+let lastLoad = 0;
+let lastError: string | null = null;
 
-/** Normalize a DB row (or mock) into the UI shape. */
-function normalizeRow(r: any) {
-  const mileage = Number(r?.mileage ?? r?.odometer ?? r?.miles ?? 0) || 0;
-  const price = Number(r?.price ?? r?.ask ?? r?.list_price ?? 0) || 0;
-  const location = String(r?.location ?? r?.loc ?? r?.city_state ?? r?.city ?? "")
-    .trim() || undefined;
+// --- tiny CSV parser robust enough for quoted fields with commas ---
+function splitCSVLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let inQ = false;
 
-  // Derive stock status from whatever flags exist (all optional)
-  const isInStock =
-    (r?.in_stock ? true : false) ||
-    (r?.available ? true : false) ||
-    (r?.status === "in_stock");
-
-  const images: string[] = Array.isArray(r?.images)
-    ? r.images
-    : Array.isArray(r?.photos)
-    ? r.photos
-    : [];
-
-  const year = r?.year != null ? Number(r.year) : undefined;
-
-  return {
-    vin: String(r?.vin ?? r?.VIN ?? "").trim(),
-    year,
-    make: r?.make ?? "",
-    model: r?.model ?? "",
-    trim: r?.trim ?? "",
-    mileage,
-    price,
-    location,
-    status: isInStock ? "in stock" : "not in stock",
-    images,
-    title: r?.title ?? [year, r?.make, r?.model, r?.trim].filter(Boolean).join(" "),
-  };
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      // toggle or escaped quote
+      if (inQ && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQ = !inQ;
+      }
+    } else if (ch === "," && !inQ) {
+      out.push(cur);
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
 }
 
-/* ---------------------------
-   SEARCH
-   GET /api/vehicles/search?q=&page=&pagesize=
---------------------------- */
-router.get("/search", async (req: Request, res: Response) => {
-  try {
-    const q = String(req.query.q ?? "").trim();
-    const page = Math.max(1, Number(req.query.page ?? 1));
-    const pagesize = Math.min(50, Math.max(1, Number(req.query.pagesize ?? 20)));
-    const offset = (page - 1) * pagesize;
+function asNum(v: any): number | undefined {
+  if (v === null || v === undefined || v === "") return undefined;
+  const n = Number(String(v).replace(/[,$]/g, "").trim());
+  return Number.isFinite(n) ? n : undefined;
+}
 
-    // Select * to avoid missing-column errors across environments.
-    const rows = await sql/* sql */`
-      SELECT * FROM vehicles
-      WHERE
-        (${q} = '')
-        OR (make  ILIKE ${"%" + q + "%"})
-        OR (model ILIKE ${"%" + q + "%"})
-        OR (trim  ILIKE ${"%" + q + "%"})
-        OR (vin   ILIKE ${"%" + q + "%"})
-      ORDER BY year DESC NULLS LAST, make ASC, model ASC
-      LIMIT ${pagesize} OFFSET ${offset};
-    `;
+function normalizeRow(raw: Record<string, any>): InvRow {
+  const lc: Record<string, any> = {};
+  for (const [k, v] of Object.entries(raw)) lc[k.toLowerCase()] = v;
 
-    const countRow = await sql/* sql */`
-      SELECT COUNT(*)::int AS count
-      FROM vehicles
-      WHERE
-        (${q} = '')
-        OR (make  ILIKE ${"%" + q + "%"})
-        OR (model ILIKE ${"%" + q + "%"})
-        OR (trim  ILIKE ${"%" + q + "%"})
-        OR (vin   ILIKE ${"%" + q + "%"});
-    `;
+  // Accept lots of header spellings
+  const vin = (lc.vin || lc["vin#"] || lc["vehicle identification number"] || lc.id || "").toString().trim();
 
-    const total = Number(countRow?.[0]?.count ?? 0);
-    const results = (rows ?? []).map(normalizeRow);
+  const year = asNum(lc.year);
+  const make = (lc.make || lc.brand || "").toString().trim() || undefined;
+  const model = (lc.model || "").toString().trim() || undefined;
+  const trim = (lc.trim || lc.submodel || "").toString().trim() || undefined;
 
-    return res.json({
-      ok: true,
-      query: { q, page, pagesize, dir: "desc" },
-      count: results.length,
-      total,
-      totalPages: Math.max(1, Math.ceil(total / pagesize)),
-      results,
-    });
-  } catch (err: any) {
-    return res
-      .status(500)
-      .json({ ok: false, error: err?.message ?? "Search failed" });
+  const mileage = asNum(lc.mileage ?? lc.odometer ?? lc.miles);
+  const price = asNum(lc.price ?? lc.ask ?? lc.list_price ?? lc.msrp);
+
+  const location =
+    (lc.location ||
+      [lc.loc, lc.city, lc.state].filter(Boolean).join(", "))?.toString().trim() || undefined;
+
+  // Status: accept several signals; default to "in stock" if sheet says available
+  let status = (lc.status || lc.availability || lc.available)?.toString().trim().toLowerCase();
+  if (status === "true" || status === "yes" || status === "available") status = "in stock";
+  if (!status) status = "in stock";
+
+  // Images: allow comma/semicolon/pipe separated
+  const imagesRaw = (lc.images || lc.photos || "").toString();
+  const images =
+    imagesRaw
+      .split(/[,;|]\s*/)
+      .map((s: string) => s.trim())
+      .filter(Boolean) || [];
+
+  // Title (fallback)
+  const title =
+    lc.title ||
+    [year, make, model, trim].filter(Boolean).join(" ").trim();
+
+  return {
+    vin,
+    year,
+    make,
+    model,
+    trim,
+    mileage,
+    location,
+    price,
+    status,
+    images,
+    title,
+    _raw: raw,
+  } as InvRow;
+}
+
+async function loadInventoryFromCSV(): Promise<InvRow[]> {
+  if (!CSV_URL) throw new Error("INVENTORY_CSV env var is not set");
+  const res = await fetch(CSV_URL);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch CSV (${res.status} ${res.statusText})`);
   }
+  const text = await res.text();
+
+  const lines = text
+    .split(/\r?\n/)
+    .filter((l) => l.trim().length > 0);
+
+  if (lines.length === 0) return [];
+
+  const headers = splitCSVLine(lines[0]).map((h) => h.trim());
+  const rows: InvRow[] = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = splitCSVLine(lines[i]);
+    const raw: Record<string, string> = {};
+    headers.forEach((h, idx) => {
+      raw[h] = cols[idx] ?? "";
+    });
+    const norm = normalizeRow(raw);
+    if (norm.vin) rows.push(norm);
+  }
+  return rows;
+}
+
+async function ensureInventory(force = false) {
+  const now = Date.now();
+  if (force || now - lastLoad > REFRESH_MS || INVENTORY.length === 0) {
+    try {
+      const data = await loadInventoryFromCSV();
+      INVENTORY = data;
+      lastLoad = now;
+      lastError = null;
+      console.log(`[inventory] loaded ${INVENTORY.length} rows from CSV`);
+    } catch (e: any) {
+      lastError = e?.message || String(e);
+      console.error("[inventory] load error:", lastError);
+    }
+  }
+}
+
+// initial load (non-blocking)
+ensureInventory(true);
+// background refresher
+setInterval(() => ensureInventory(false), REFRESH_MS);
+
+// -------------------- Routes --------------------
+
+// Health under /api
+router.get("/health", (_req: Request, res: Response) => {
+  res.json({ ok: true, inventory: INVENTORY.length, lastError });
 });
 
-/* ---------------------------
-   VEHICLE DETAILS
-   GET /api/vehicles/:vin
---------------------------- */
-router.get("/:vin", async (req: Request, res: Response) => {
+// SEARCH: /api/search  (accepts q, page, pagesize, dir)
+router.get("/search", async (req: Request, res: Response) => {
+  await ensureInventory(false);
+
   try {
-    const vin = String(req.params.vin ?? "").trim();
-    if (!vin) return res.status(400).json({ ok: false, error: "VIN required" });
+    const q = String(req.query.q ?? "").trim().toLowerCase();
+    const page = Math.max(1, Number(req.query.page || 1));
+    const pagesize = Math.min(50, Math.max(1, Number(req.query.pagesize || 20)));
 
-    const rows = await sql/* sql */`
-      SELECT * FROM vehicles
-      WHERE vin = ${vin}
-      LIMIT 1;
-    `;
+    let source = INVENTORY;
 
-    if (!rows?.length) {
-      // Return minimal shell so the VDP can still render
-      return res.json({
-        ok: true,
-        vehicle: {
-          vin,
-          title: vin,
-          status: "not in stock",
-          images: [],
-        },
+    if (q) {
+      source = source.filter((r) => {
+        const hay = [
+          r.vin,
+          r.make,
+          r.model,
+          r.trim,
+          r.location,
+          r.status,
+          r.year?.toString(),
+          r.price?.toString(),
+          r.mileage?.toString(),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(q);
       });
     }
 
-    const vehicle = normalizeRow(rows[0]);
-    return res.json({ ok: true, vehicle });
-  } catch (err: any) {
-    return res
-      .status(500)
-      .json({ ok: false, error: err?.message ?? "Lookup failed" });
+    const total = source.length;
+    const totalPages = Math.max(1, Math.ceil(total / pagesize));
+    const start = (page - 1) * pagesize;
+    const results = source.slice(start, start + pagesize);
+
+    res.json({
+      ok: true,
+      results,
+      count: results.length,
+      total,
+      totalPages,
+      page,
+      pagesize,
+      lastError,
+    });
+  } catch (e: any) {
+    res.status(200).json({ ok: false, error: e?.message || String(e) });
   }
 });
 
-/* ---------------------------
-   MOCKED PHOTOS
-   GET /api/vehicles/vin/photos?vin=...
---------------------------- */
-const PHOTOS: Record<string, string[]> = {
-  "3MZBPACL4PM300002": [
-    "https://images.unsplash.com/photo-1519641471654-76ce0107ad1b?auto=format&fit=crop&w=1200&q=60",
-    "https://images.unsplash.com/photo-1549921296-3ecf4a8b0a63?auto=format&fit=crop&w=1200&q=60",
-  ],
-  "JM1BPBLL9M1300001": [
-    "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&w=1200&q=60",
-  ],
-};
+// VDP: /api/vehicles/:vin
+router.get("/vehicles/:vin", async (req: Request, res: Response) => {
+  await ensureInventory(false);
 
-router.get("/vin/photos", async (req: Request, res: Response) => {
-  const vin = String(req.query.vin ?? req.params?.vin ?? "").trim();
-  const photos = PHOTOS[vin] ?? [];
-  return res.json({
-    ok: true,
-    count: photos.length,
-    photos,
-    photos_preview: photos.slice(0, 100),
-  });
+  const vin = String(req.params.vin);
+  const found = INVENTORY.find((r) => r.vin === vin);
+  if (!found) return res.json({ ok: false, error: "Not found" });
+  res.json({ ok: true, vehicle: found });
 });
 
-/* ---------------------------
-   MOCKED HISTORY
-   GET /api/vehicles/vin/history?vin=...&type=all|maintenance|accident|ownership
---------------------------- */
-type HistoryType = "maintenance" | "accident" | "ownership";
-type HistoryEvent = {
-  id: string;
-  type: HistoryType;
-  at: string;
-  title: string;
-  notes?: string;
-  odometer?: number;
-};
+// Photos: /api/vehicles/:vin/photos
+router.get("/vehicles/:vin/photos", async (req: Request, res: Response) => {
+  await ensureInventory(false);
 
-const HISTORY: Record<string, HistoryEvent[]> = {
-  "3MZBPACL4PM300002": [
-    {
-      id: "h1",
-      type: "ownership",
-      at: "2024-03-12T10:00:00Z",
-      title: "Title issued / First owner reported",
-      notes: "CA DMV",
-    },
-    {
-      id: "h2",
-      type: "maintenance",
-      at: "2024-08-05T09:00:00Z",
-      title: "5k service performed",
-      odometer: 5100,
-      notes: "Oil/filter change; multi-point inspection",
-    },
-  ],
-  "JM1BPBLL9M1300001": [
-    {
-      id: "m1",
-      type: "maintenance",
-      at: "2023-06-10T12:00:00Z",
-      title: "Routine maintenance",
-      odometer: 22000,
-    },
-  ],
-};
+  const vin = String(req.params.vin);
+  const found = INVENTORY.find((r) => r.vin === vin);
+  const photos = found?.images ?? [];
+  res.json({ ok: true, photos, count: photos.length });
+});
 
+// History: /api/vin/history?vin=...
 router.get("/vin/history", async (req: Request, res: Response) => {
-  const vin = String(req.query.vin ?? req.params?.vin ?? "").trim();
-  const type = String(req.query.type ?? "all").toLowerCase() as
-    | "all"
-    | HistoryType;
-
-  let items: HistoryEvent[] = Array.isArray(HISTORY[vin]) ? [...HISTORY[vin]] : [];
-  if (type !== "all") items = items.filter((e) => e.type === type);
-  items.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
-
-  return res.json({ ok: true, type, count: items.length, events: items });
+  // No external history yet—return empty.
+  res.json({ ok: true, type: "all", count: 0, events: [] });
 });
 
 export default router;
