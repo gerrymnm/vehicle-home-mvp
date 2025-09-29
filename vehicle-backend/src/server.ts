@@ -6,88 +6,91 @@ import router from "./vehicles";
 
 const app = express();
 
-/* ------------------------- CORS SETUP ------------------------- */
+/* ---------------------- CORS ---------------------- */
+
 /**
- * ALLOWED_ORIGINS (Render env var) examples:
- *   https://vehicle-home-mvp.vercel.app,https://*.vercel.app,http://localhost:5173,http://localhost:3000
- *
- * We support exact strings and wildcards like https://*.vercel.app
+ * Read allowed origins from env (comma-separated), and add sensible defaults.
+ * Render env key: ALLOWED_ORIGINS
  */
-function buildMatchers(): (string | RegExp)[] {
-  const fromEnv = (process.env.ALLOWED_ORIGINS || "")
+const fromEnv =
+  (process.env.ALLOWED_ORIGINS ?? "")
     .split(",")
     .map(s => s.trim())
     .filter(Boolean);
 
-  // sensible defaults if env isn’t set
-  const defaults = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "https://vehicle-home-mvp.vercel.app",
-    /\.vercel\.app$/  // any *.vercel.app
-  ];
+const DEFAULT_ALLOW = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://vehicle-home-mvp.vercel.app",
+];
 
-  const raw = fromEnv.length ? fromEnv : defaults;
-
-  return raw.map(v => {
-    if (v.includes("*")) {
-      // turn https://*.vercel.app into a regex
-      const esc = v
-        .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
-        .replace("\\*","[^.]+"); // one subdomain segment
-      return new RegExp("^" + esc + "$");
-    }
-    // allow plain regex literals written as /.../ if you want
-    if (v.startsWith("/") && v.endsWith("/")) {
-      try { return new RegExp(v.slice(1, -1)); } catch { /* fall through */ }
-    }
-    return v;
-  });
+// Support both literal strings and regex (written as /.../ in the env if desired)
+function toMatcher(s: string): string | RegExp {
+  if (s.length >= 2 && s.startsWith("/") && s.endsWith("/")) {
+    // treat as a regex literal text from env, without flags
+    return new RegExp(s.slice(1, -1));
+  }
+  return s;
 }
 
-const MATCHERS = buildMatchers();
+const MATCHERS: (string | RegExp)[] = [
+  ...DEFAULT_ALLOW.map(toMatcher),
+  ...fromEnv.map(toMatcher),
+];
 
+/** Decide if the given origin is allowed */
+function isAllowedOrigin(origin: string): boolean {
+  return MATCHERS.some(m =>
+    typeof m === "string" ? origin === m : m.test(origin)
+  );
+}
+
+/** CORS options delegate (typed) */
 const corsDelegate: CorsOptionsDelegate = (req, cb) => {
-  const origin = req.header("Origin") || "";
-  const allowed =
-    !origin || // non-browser / curl
-    MATCHERS.some(m =>
-      m instanceof RegExp ? m.test(origin) : m === origin
-    );
-
-  cb(null, {
-    origin: allowed,
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    optionsSuccessStatus: 204
-  });
+  const origin = req.headers?.origin as string | undefined;
+  if (!origin) {
+    // no origin = same-origin / server-to-server; allow
+    return cb(null, { origin: true, credentials: true });
+  }
+  const allowed = isAllowedOrigin(origin);
+  cb(
+    null,
+    {
+      origin: allowed,
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
+    }
+  );
 };
 
-// apply CORS to everything + answer preflights
 app.use(cors(corsDelegate));
-app.options("*", cors(corsDelegate));
-/* -------------------------------------------------------------- */
+app.options("*", cors(corsDelegate)); // ensure preflight succeeds
 
+/* ------------------- App middleware ------------------- */
 app.use(express.json());
 app.use(morgan("tiny"));
 
-// Simple server health (not under /api) for sanity checks
-app.get("/health", (_req, res) => res.json({ ok: true, service: "vehicle-backend" }));
+/* -------------------- Health endpoints -------------------- */
+// Server-level health (helpful for Render)
+app.get("/health", (_req, res) => {
+  res.json({ ok: true, service: "vehicle-backend" });
+});
 
-// Mount your API under /api
+/* -------------------- Mount API router -------------------- */
 app.use("/api", router);
 
-// 404 for unknown /api paths in JSON (keeps CORS headers present)
+// JSON 404 for unknown API routes
 app.use("/api", (_req, res) => {
   res.status(404).json({ ok: false, error: "Not found" });
 });
 
-// Root
+/* -------------------- Root message -------------------- */
 app.get("/", (_req, res) => {
   res.type("text").send("Vehicle backend is running. See /api/health");
 });
 
+/* -------------------- Start server -------------------- */
 const port = process.env.PORT || 3001;
 app.listen(port, () => {
   console.log(`vehicle-backend listening on :${port}`);
