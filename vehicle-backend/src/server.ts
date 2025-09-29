@@ -4,92 +4,79 @@ import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import morgan from "morgan";
 
-import vehicles from "./vehicles"; // GET /api/vehicles/:vin and vehicle subroutes
-import search from "./search";     // GET /api/search
-import leads from "./leads";       // POST /api/leads
-import auth from "./auth";         // POST /api/auth/* etc.
+// If you use a .env locally, keep this (Render ignores it, which is fine)
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  require("dotenv").config();
+} catch { /* noop */ }
 
-// --- App bootstrap
 const app = express();
 
-// Parse JSON before routes that need it
-app.use(express.json());
+// --- Core middleware ---------------------------------------------------------
+app.set("trust proxy", true);
 
-// Basic logging
+// CORS: permissive for all preview/prod origins (tighten later if you want)
+app.use(cors({
+  origin: true, // reflect the request origin
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: false,
+  maxAge: 86400,
+}));
+app.options("*", cors()); // ensure every preflight is answered
+
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: false }));
 app.use(morgan("tiny"));
 
-// -------- CORS CONFIG --------
-// We allow GETs from anywhere (search & vehicle detail are public).
-// For non-GET (POST/PUT/PATCH/DELETE), we restrict to known origins.
-const PUBLIC_GET = ["GET", "HEAD", "OPTIONS"];
+// --- Health check ------------------------------------------------------------
+app.get("/api/health", (_req: Request, res: Response) => {
+  res.json({ ok: true, status: "healthy" });
+});
 
-const knownOrigins = new Set<string>([
-  "http://localhost:5173",
-  "http://localhost:3000",
-  "https://vehicle-home-mvp.vercel.app",
-  // Your project-scoped vercel preview & project domains (regex allowed below)
-  // Add your custom domains here if/when you connect one.
-  "https://vehicle-home-mvp.onrender.com", // self-origin (Render) for health checks
-]);
+// --- Routers (mounted under /api) -------------------------------------------
+// Vehicles API (required)
+import vehiclesRouter from "./vehicles";
+app.use("/api/vehicles", vehiclesRouter);
 
-// Regex that matches any *.vercel.app (project/preview) domains
-const vercelRegex = /\.vercel\.app$/i;
-
-app.use(
-  cors({
-    credentials: true,
-    origin: (origin, cb) => {
-      // No origin (curl/postman) -> allow
-      if (!origin) return cb(null, true);
-
-      // Public GET endpoints: allow any origin (so SRP works everywhere)
-      // Preflight (OPTIONS) is allowed here too to enable GETs cleanly.
-      // Non-GET requests continue through the checks below.
-      // NOTE: Browsers preflight with OPTIONS; we let that pass.
-      cb(null, true);
-    },
-    methods: ["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    maxAge: 86400, // cache preflight
-  })
-);
-
-// Hard short-circuit for non-GET to ensure origin is trusted
-app.use((req: Request, res: Response, next: NextFunction) => {
-  if (PUBLIC_GET.includes(req.method)) return next();
-
-  const origin = req.headers.origin || "";
-  const allowed =
-    knownOrigins.has(origin) || (!!origin && vercelRegex.test(new URL(origin).hostname));
-
-  if (!allowed) {
-    return res
-      .status(403)
-      .json({ ok: false, error: "CORS: origin not allowed for this method" });
+// Auth API (optional): only mount if the file exists/exports default
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const maybeAuth = require("./auth");
+  if (maybeAuth?.default) {
+    app.use("/api/auth", maybeAuth.default);
   }
-  next();
+} catch { /* not present, skip */ }
+
+// You can add other routers similarly, e.g. leads, metrics, searches:
+// import leadsRouter from "./leads"; app.use("/api/leads", leadsRouter);
+
+// --- 404 handler (JSON) ------------------------------------------------------
+app.use("/api", (_req: Request, res: Response) => {
+  res.status(404).json({ ok: false, error: "Not found" });
 });
 
-// -------- Routes --------
-app.get("/api/health", (_req, res) =>
-  res.json({ ok: true, service: "vehicle-backend", ts: Date.now() })
-);
+// --- Error handler (JSON) ----------------------------------------------------
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  const status = typeof err?.status === "number" ? err.status : 500;
+  const message =
+    err?.message ||
+    err?.error ||
+    (status === 404 ? "Not found" : "Internal server error");
 
-app.use("/api/search", search);
-app.use("/api/vehicles", vehicles);
-app.use("/api/leads", leads);
-app.use("/api/auth", auth);
-
-// Fallback 404 for unknown API routes
-app.use("/api/*", (_req, res) => res.status(404).json({ ok: false, error: "Not found" }));
-
-// Root ping
-app.get("/", (_req, res) => {
-  res.type("text/plain").send("vehicle-backend is running");
+  // Helpful details in dev; minimal in prod
+  const body: Record<string, any> = { ok: false, error: message };
+  if (process.env.NODE_ENV !== "production" && err?.stack) {
+    body.stack = err.stack;
+  }
+  res.status(status).json(body);
 });
 
-// -------- Start (Render provides PORT) --------
-const PORT = Number(process.env.PORT || 10000);
+// --- Start server ------------------------------------------------------------
+const PORT = Number(process.env.PORT) || 3000;
 app.listen(PORT, () => {
-  console.log(`[server] listening on :${PORT}`);
+  // Keep this log — Render shows it in the instance logs
+  console.log(`API listening on port ${PORT}`);
 });
+
+export default app;

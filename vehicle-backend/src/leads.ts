@@ -1,66 +1,35 @@
+// vehicle-backend/src/leads.ts
 import { Router, Request, Response } from "express";
-import pool from "./db";
+import { pool } from "./db";
 
 const router = Router();
 
-/**
- * POST /api/leads
- * Body: { vin: string, name?: string, email?: string, phone?: string, message?: string }
- */
-router.post("/", async (req: Request, res: Response) => {
+router.post("/leads", async (req: Request, res: Response) => {
   try {
-    const { vin, name, email, phone, message } = (req.body ?? {}) as {
-      vin?: string;
-      name?: string;
-      email?: string;
-      phone?: string;
-      message?: string;
-    };
+    const { vin, name, email, phone, message } = req.body ?? {};
+    if (!vin) return res.status(400).json({ error: "vin_required" });
 
-    if (!vin || typeof vin !== "string") {
-      return res.status(400).json({ error: "vin_required" });
-    }
-
-    const sql =
+    const result = await pool.query(
       `INSERT INTO leads (vin, name, email, phone, message, status)
-       VALUES ($1,$2,$3,$4,$5,'new')
-       RETURNING id, created_at`;
+       VALUES ($1,$2,$3,$4,$5,'new') RETURNING id, created_at`,
+      [vin, name ?? null, email ?? null, phone ?? null, message ?? null]
+    );
 
-    const r = await pool.query(sql, [
-      vin,
-      name ?? null,
-      email ?? null,
-      phone ?? null,
-      message ?? null,
-    ]);
-
-    return res.json({
-      ok: true,
-      id: r.rows?.[0]?.id,
-      created_at: r.rows?.[0]?.created_at,
-    });
-  } catch (e: any) {
-    console.error("[leads] create failed:", e);
-    return res.status(500).json({ ok: false, error: "lead_failed" });
+    res.json({ ok: true, id: result.rows[0].id, created_at: result.rows[0].created_at });
+  } catch (e) {
+    res.status(500).json({ error: "lead_failed" });
   }
 });
 
-/**
- * GET /api/leads
- * Returns the most recent leads (basic list).
- */
-router.get("/", async (_req: Request, res: Response) => {
+router.get("/leads", async (_req: Request, res: Response) => {
   try {
     const r = await pool.query(
       `SELECT id, vin, name, email, phone, message, status, created_at
-       FROM leads
-       ORDER BY created_at DESC
-       LIMIT 100`
+       FROM leads ORDER BY created_at DESC LIMIT 200`
     );
-    return res.json({ ok: true, rows: r.rows });
-  } catch (e: any) {
-    console.error("[leads] list failed:", e);
-    return res.status(500).json({ ok: false, error: "lead_list_failed" });
+    res.json({ ok: true, items: r.rows });
+  } catch (e) {
+    res.status(500).json({ error: "leads_query_failed" });
   }
 });
 
