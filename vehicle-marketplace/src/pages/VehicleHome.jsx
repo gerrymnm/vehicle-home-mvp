@@ -1,110 +1,83 @@
-// Full file: vehicle-marketplace/src/pages/VehicleHome.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import api from "../lib/api.js";
-import History from "../components/History.jsx";
+import { getVehicle } from "../lib/api.js"; // <-- use the named helper
 
-const wrap = {
-  maxWidth: 900,
-  margin: "24px auto",
-  padding: "0 16px",
-};
-const h1 = { fontSize: "24px", fontWeight: 700, margin: "8px 0 16px" };
-const label = { fontWeight: 600, marginTop: 16 };
-const photoBox = {
-  display: "flex",
-  gap: 16,
-  flexWrap: "wrap",
-};
-const imgStyle = { width: 270, height: 160, objectFit: "cover", borderRadius: 8, border: "1px solid #ddd" };
+const h2 = { fontSize: "18px", margin: "18px 0 8px", fontWeight: 600 };
+const err = { color: "crimson", marginTop: 10 };
 
 export default function VehicleHome() {
   const { vin } = useParams();
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
-  const [data, setData] = useState(null);
-  const [photos, setPhotos] = useState([]);
 
-  const title = useMemo(() => {
-    if (!data) return "Vehicle Marketplace";
-    const t = data.title || `${data.year ?? ""} ${data.make ?? ""} ${data.model ?? ""}`.trim();
-    return t || "Vehicle Marketplace";
-  }, [data]);
+  const [loading, setLoading] = useState(false);
+  const [vehicle, setVehicle] = useState(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    async function load() {
-      if (!vin) return;
+    let cancel = false;
+    (async () => {
       setLoading(true);
-      setErr("");
+      setError("");
       try {
-        const v = await api.vehicle(vin);
-        if (!v || v.ok === false) throw new Error(v?.error || "Failed to load vehicle");
-        setData(v.vehicle || v); // accept either shape
-        // Optional photos endpoint (mocked/static ok)
-        try {
-          const ph = await api.vehiclePhotos(vin);
-          setPhotos(Array.isArray(ph?.photos) ? ph.photos : []);
-        } catch {
-          setPhotos([]);
-        }
+        const data = await getVehicle(vin);
+        if (!cancel) setVehicle(data);
       } catch (e) {
-        setErr(e instanceof Error ? e.message : String(e));
+        if (!cancel) setError(e?.message || String(e));
       } finally {
-        setLoading(false);
+        if (!cancel) setLoading(false);
       }
-    }
-    load();
+    })();
+    return () => { cancel = true; };
   }, [vin]);
 
+  if (loading) return <div style={{ padding: 24 }}>Loading…</div>;
+  if (error) return (
+    <div style={{ padding: 24 }}>
+      <h1>Vehicle Marketplace</h1>
+      <p style={err}>Error: {error}</p>
+      <p><Link to="/search">← Back to search</Link></p>
+    </div>
+  );
+  if (!vehicle) return (
+    <div style={{ padding: 24 }}>
+      <h1>Vehicle Marketplace</h1>
+      <p>No vehicle.</p>
+      <p><Link to="/search">← Back to search</Link></p>
+    </div>
+  );
+
+  const { year, make, model, trim, price, mileage, location, photos = [] } = vehicle;
+
   return (
-    <div style={wrap}>
-      <div style={{ marginBottom: 12 }}>
-        <Link to="/search">← Back to search</Link>
+    <div style={{ maxWidth: 960, margin: "0 auto", padding: "24px 16px" }}>
+      <p><Link to="/search">← Back to search</Link></p>
+      <h1>{year} {make} {model}{trim ? ` ${trim}` : ""}</h1>
+      <div style={{ color: "#555", marginBottom: 10 }}>
+        <strong>VIN:</strong> {vehicle.vin}
+        {price != null ? <> • ${price}</> : null}
+        {mileage != null ? <> • {Number(mileage).toLocaleString()} miles</> : null}
+        {location ? <> • {location}</> : null}
       </div>
 
-      <h1 style={h1}>{title}</h1>
+      <h2 style={h2}>Photos</h2>
+      <div style={{ display: "flex", gap: 12 }}>
+        {photos.length === 0 ? <div>No photos yet.</div> :
+          photos.map((src, i) => (
+            <img key={i} src={src} alt={`Photo ${i + 1}`} style={{ width: 260, height: 160, objectFit: "cover", borderRadius: 6 }} />
+          ))
+        }
+      </div>
 
-      {loading && <div>Loading…</div>}
-      {!loading && err && <div style={{ color: "#b00020" }}>Error: {err}</div>}
+      <h2 style={h2}>Lien</h2>
+      <div>No active lien reported.</div>
 
-      {!loading && !err && data && (
-        <>
-          <div style={{ marginBottom: 8 }}>
-            <div>
-              <strong>VIN:</strong>{" "}
-              <span style={{ fontFamily: "monospace" }}>{data.vin}</span>{" "}
-              • {data.price ? `$${Number(data.price).toLocaleString()}` : "—"} •{" "}
-              {data.mileage?.toLocaleString?.() ?? data.mileage ?? "—"} miles •{" "}
-              {data.location ?? "—"}
-            </div>
-            <div>Status: {data.in_stock ? "in stock" : "not in stock"}</div>
-          </div>
+      <h2 style={h2}>Dealership Inspection</h2>
+      <div>Not provided.</div>
 
-          <div style={label}>Photos</div>
-          <div style={photoBox}>
-            {photos.length === 0 && <div>No photos yet.</div>}
-            {photos.map((src, i) => (
-              <img key={`${src}-${i}`} src={src} alt={`photo ${i + 1}`} style={imgStyle} />
-            ))}
-          </div>
+      <h2 style={h2}>Compliance & Records</h2>
+      <div>Smog: unknown • NMVTIS: brands unknown • Theft: unknown • KSR: Not provided</div>
 
-          <div style={label}>Lien</div>
-          <div>No active lien reported.</div>
-
-          <div style={label}>Dealership Inspection</div>
-          <div>Not provided.</div>
-
-          <div style={label}>Compliance & Records</div>
-          <div style={{ fontSize: 14 }}>
-            Smog: unknown<br />
-            NMVTIS: brands unknown • Theft: unknown<br />
-            KSR: Not provided
-          </div>
-
-          <div style={label}>History</div>
-          <History vin={data.vin} />
-        </>
-      )}
+      <h2 style={h2}>History</h2>
+      <div>No history yet.</div>
     </div>
   );
 }
