@@ -1,93 +1,97 @@
-// Full file: vehicle-marketplace/src/lib/api.js
-const BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/+$/, ""); // must include /api
-if (!BASE) {
-  console.warn("VITE_API_BASE is not set; API calls will fail.");
-}
+// vehicle-marketplace/src/lib/api.js
 
-async function doFetch(path, opts = {}, retry = true) {
-  const url = `${BASE}${path.startsWith("/") ? path : `/${path}`}`;
-  try {
-    const res = await fetch(url, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-      ...opts,
-    });
-    if (!res.ok) {
-      // Try to parse JSON error; fallback to status text
-      let detail = res.statusText;
-      try {
-        const j = await res.json();
-        detail = j?.error || detail;
-      } catch {}
-      throw new Error(`${res.status} ${detail}`.trim());
-    }
-    return res.json();
-  } catch (err) {
-    // Help when Render is cold: retry once after a short delay
-    if (retry) {
-      await new Promise(r => setTimeout(r, 1200));
-      return doFetch(path, opts, false);
-    }
-    throw err;
+// IMPORTANT: VITE_API_BASE must include the /api suffix, e.g.
+//   https://vehicle-home-mvp.onrender.com/api
+const RAW_BASE = import.meta.env.VITE_API_BASE || "";
+const BASE = RAW_BASE.replace(/\/+$/, ""); // trim trailing slash(es)
+
+// Centralized fetch helper
+async function dofetch(path, opts = {}) {
+  if (!BASE) {
+    throw new Error("VITE_API_BASE is not set");
   }
+  const url = path.startsWith("/") ? `${BASE}${path}` : `${BASE}/${path}`;
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    ...opts,
+  });
+
+  // Try to parse JSON either way
+  let data = null;
+  try {
+    data = await res.json();
+  } catch (_) {
+    // ignore JSON parse failure for non-JSON responses
+  }
+
+  if (!res.ok) {
+    const msg =
+      (data && (data.error || data.message)) ||
+      `${res.status} ${res.statusText}`;
+    throw new Error(msg);
+  }
+
+  return data;
 }
 
-export default {
-  async searchVehicles({ q, page = 1, pagesize = 20 }) {
-    const params = new URLSearchParams();
-    if (q) params.set("q", q);
-    params.set("page", String(page));
-    params.set("pagesize", String(pagesize));
-    const data = await doFetch(`/vehicles/search?${params.toString()}`);
-    if (!data?.ok) throw new Error(data?.error || "Search failed");
-    return data;
-  },
+/* -------------------- Public read endpoints -------------------- */
 
-  async getByVin(vin) {
-    const data = await doFetch(`/vehicles/${encodeURIComponent(vin)}`);
-    if (!data?.ok) throw new Error(data?.error || "Lookup failed");
-    return data.vehicle;
-  },
+export function searchVehicles(query, page = 1) {
+  const q = String(query || "").trim();
+  const p = Number(page) || 1;
+  return dofetch(`/search?q=${encodeURIComponent(q)}&page=${p}`);
+}
 
-  async getVehiclePhotos(vin) {
-    const data = await doFetch(`/vehicles/vin/photos?vin=${encodeURIComponent(vin)}`);
-    if (!data?.ok) throw new Error(data?.error || "Photos failed");
-    return data.photos || [];
-  },
+export function getVehicleByVin(vin) {
+  return dofetch(`/vehicles/${encodeURIComponent(vin)}`);
+}
 
-  async getVehicleHistory(vin, type = "all") {
-    const params = new URLSearchParams({ vin, type });
-    const data = await doFetch(`/vehicles/vin/history?${params.toString()}`);
-    if (!data?.ok) throw new Error(data?.error || "History failed");
-    return data.events || [];
-  },
+export function getVehiclePhotos(vin) {
+  return dofetch(`/vin/photos/${encodeURIComponent(vin)}`);
+}
 
-  // Auth (if you’re using it)
-  async authLogin(payload) {
-    const data = await doFetch(`/auth/login`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    if (!data?.ok) throw new Error(data?.error || "Login failed");
-    return data;
-  },
+export function getVehicleHistory(vin, type = "all") {
+  const t = String(type || "all");
+  return dofetch(`/vin/history/${encodeURIComponent(vin)}?type=${encodeURIComponent(t)}`);
+}
 
-  async authRegister(payload) {
-    const data = await doFetch(`/auth/register`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    if (!data?.ok) throw new Error(data?.error || "Register failed");
-    return data;
-  },
+/* -------------------- Auth endpoints -------------------- */
 
-  async authMe(token) {
-    const data = await doFetch(`/auth/me`, {
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    });
-    if (!data?.ok) throw new Error(data?.error || "Auth check failed");
-    return data;
-  },
+export function authLogin(email, password) {
+  return dofetch("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function authRegister(name, email, password) {
+  return dofetch("/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ name, email, password }),
+  });
+}
+
+export function authMe(token) {
+  return dofetch("/auth/me", {
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+}
+
+/* -------------------- default export (optional convenience) -------------------- */
+
+const api = {
+  searchVehicles,
+  getVehicleByVin,
+  getVehiclePhotos,
+  getVehicleHistory,
+  authLogin,
+  authRegister,
+  authMe,
 };
 
-export const { searchVehicles, getByVin, getVehiclePhotos, getVehicleHistory, authLogin, authRegister, authMe } = (/** @type {any} */ (default));
+export default api;
