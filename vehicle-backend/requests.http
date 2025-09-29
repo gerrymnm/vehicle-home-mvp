@@ -1,8 +1,12 @@
-### Health
-GET http://localhost:8080/health
+### -----------------------
+### LOCAL (when running backend locally)
+### -----------------------
 
-### Register dealer
-POST http://localhost:8080/api/auth/register
+### Health (local root health)
+GET http://localhost:3001/health
+
+### Register dealer (local)
+POST http://localhost:3001/api/auth/register
 Content-Type: application/json
 
 {
@@ -12,9 +16,9 @@ Content-Type: application/json
   "dealerName": "Sunrise Motors"
 }
 
-### Login
+### Login (local)
 # @name login
-POST http://localhost:8080/api/auth/login
+POST http://localhost:3001/api/auth/login
 Content-Type: application/json
 
 {
@@ -22,10 +26,10 @@ Content-Type: application/json
   "password": "pass1234"
 }
 
-### Create vehicle (uses token from login)
+### Create vehicle (local; uses token from login)
 @access = {{login.response.body.$.access}}
 
-POST http://localhost:8080/api/vehicles
+POST http://localhost:3001/api/vehicles
 Authorization: Bearer {{access}}
 Content-Type: application/json
 
@@ -40,5 +44,19 @@ Content-Type: application/json
   "location": "San Rafael, CA"
 }
 
-### Search
-GET http://localhost:8080/api/vehicles?q=jeep
+### Search (local; note /api/search)
+GET http://localhost:3001/api/search?q=jeep&pagesize=5
+
+
+### -----------------------
+### PRODUCTION (Render)
+### -----------------------
+
+### Ingest inventory from CSV (Render)
+POST https://vehicle-home-mvp.onrender.com/api/ingest
+
+### Health (Render; inventory count should increase after ingest)
+GET https://vehicle-home-mvp.onrender.com/api/health
+
+### Quick search test (Render)
+GET https://vehicle-home-mvp.onrender.com/api/search?q=mazda&pagesize=5
