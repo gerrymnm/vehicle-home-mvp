@@ -1,46 +1,57 @@
 import React, { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { searchVehicles } from "../lib/api.js"; // <-- import the named function
+import { searchVehicles } from "../lib/api.js";
 
 const h1 = { fontSize: "22px", fontWeight: 600, margin: "24px 0 12px" };
 const err = { color: "crimson", marginTop: 12 };
 
 export default function Search() {
   const [params, setParams] = useSearchParams();
-  const [q, setQ] = useState(params.get("q") || "");
-  const page = Number(params.get("page") || 1);
 
+  // Derive the actual primitive values we care about from params
+  const qParam = params.get("q") || "";
+  const pageParam = Number(params.get("page") || 1);
+
+  const [q, setQ] = useState(qParam);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    const controller = new AbortController();
+
     const run = async () => {
-      if (!params.get("q")) {
+      // if there is no ?q= in the URL, show an empty state
+      if (!qParam) {
         setResults([]);
         setError("");
+        setLoading(false);
         return;
       }
+
       setLoading(true);
       setError("");
       try {
         const data = await searchVehicles({
-          q: params.get("q") || "",
-          page,
+          q: qParam,
+          page: pageParam,
           pagesize: 20,
           dir: "asc",
+          signal: controller.signal,
         });
-        // backend shape: { ok, results, count, total, totalPages, ... }
         setResults(Array.isArray(data.results) ? data.results : []);
       } catch (e) {
+        if (e.name === "AbortError") return; // ignore aborted request
         setError(`Search failed: ${e.message || e}`);
         setResults([]);
       } finally {
         setLoading(false);
       }
     };
+
     run();
-  }, [params, page]);
+    return () => controller.abort();
+  }, [qParam, pageParam]); // <- depend on primitive values, not the params object
 
   const onSubmit = (e) => {
     e.preventDefault();
@@ -53,6 +64,12 @@ export default function Search() {
 
   return (
     <div style={{ maxWidth: 960, margin: "0 auto", padding: "24px 16px" }}>
+      <div style={{ display: "flex", gap: 12, marginBottom: 8 }}>
+        <Link to="/">Vehicle Marketplace</Link>
+        <Link to="/search">Search</Link>
+        <Link to="/login">Dealer/Login</Link>
+      </div>
+
       <h1 style={h1}>Find your next vehicle</h1>
 
       <form onSubmit={onSubmit} style={{ display: "flex", gap: 8 }}>
@@ -83,7 +100,10 @@ export default function Search() {
                   {r.title || `${r.year} ${r.make} ${r.model}${r.trim ? " " + r.trim : ""}`}
                 </Link>
                 <div style={{ fontSize: 12, color: "#555" }}>
-                  VIN: {r.vin} • {r.mileage?.toLocaleString?.() ?? r.mileage} miles • {r.location} • ${r.price}
+                  VIN: {r.vin}
+                  {r.mileage != null ? <> • {Number(r.mileage).toLocaleString()} miles</> : null}
+                  {r.location ? <> • {r.location}</> : null}
+                  {r.price != null ? <> • ${r.price}</> : null}
                 </div>
               </li>
             ))
