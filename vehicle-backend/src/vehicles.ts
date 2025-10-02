@@ -1,252 +1,178 @@
 // vehicle-backend/src/vehicles.ts
-import { Router, Request, Response } from "express";
+import { Router } from "express";
+import type { Request, Response } from "express";
+import { Pool } from "pg";
 
-// ------------ Config ------------
-const CSV_URL =
-  process.env.INVENTORY_CSV ||
-  "https://docs.google.com/spreadsheets/d/12oHSYTIMAprpCoK7cnwY7D6kYAOpqDdjV_am-xPC31s/export?format=csv&gid=0";
+// --- DB pool ---
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL || process.env.DATABASE_URL || process.env.DATABASE_URL,
+  // Neon/Render usually require SSL
+  ssl: process.env.PGSSL ? { rejectUnauthorized: false } : undefined,
+});
 
-const REFRESH_MS = Number(process.env.INVENTORY_REFRESH_MS || 10 * 60 * 1000); // 10m
-// --------------------------------
-
-type InvRow = {
+type Vehicle = {
   vin: string;
-  year?: number;
-  make?: string;
-  model?: string;
-  trim?: string;
-  mileage?: number;
-  location?: string;
-  price?: number;
-  status?: string; // "in stock" | "not in stock" | etc
-  images?: string[];
-  // keep raw in case we add properties later
-  [k: string]: any;
+  year: number;
+  make: string;
+  model: string;
+  trim?: string | null;
+  price?: number | null;
+  mileage?: number | null;
+  location?: string | null;
+  condition?: string | null;
+  keywords?: string | null;
+  title?: string | null;
 };
 
 const router = Router();
-let INVENTORY: InvRow[] = [];
-let lastLoad = 0;
-let lastError: string | null = null;
 
-// --- tiny CSV parser robust enough for quoted fields with commas ---
-function splitCSVLine(line: string): string[] {
-  const out: string[] = [];
-  let cur = "";
-  let inQ = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      // toggle or escaped quote
-      if (inQ && line[i + 1] === '"') {
-        cur += '"';
-        i++;
-      } else {
-        inQ = !inQ;
-      }
-    } else if (ch === "," && !inQ) {
-      out.push(cur);
-      cur = "";
-    } else {
-      cur += ch;
-    }
+/** Health under /api/health */
+router.get("/health", async (_req: Request, res: Response) => {
+  try {
+    const { rows } = await pool.query(`select count(*)::int as n from vehicles`);
+    res.json({ ok: true, inventory: rows?.[0]?.n ?? 0, lastError: null });
+  } catch (e: any) {
+    res.json({ ok: true, inventory: 0, lastError: e?.message || String(e) });
   }
-  out.push(cur);
-  return out;
-}
-
-function asNum(v: any): number | undefined {
-  if (v === null || v === undefined || v === "") return undefined;
-  const n = Number(String(v).replace(/[,$]/g, "").trim());
-  return Number.isFinite(n) ? n : undefined;
-}
-
-function normalizeRow(raw: Record<string, any>): InvRow {
-  const lc: Record<string, any> = {};
-  for (const [k, v] of Object.entries(raw)) lc[k.toLowerCase()] = v;
-
-  // Accept lots of header spellings
-  const vin = (lc.vin || lc["vin#"] || lc["vehicle identification number"] || lc.id || "").toString().trim();
-
-  const year = asNum(lc.year);
-  const make = (lc.make || lc.brand || "").toString().trim() || undefined;
-  const model = (lc.model || "").toString().trim() || undefined;
-  const trim = (lc.trim || lc.submodel || "").toString().trim() || undefined;
-
-  const mileage = asNum(lc.mileage ?? lc.odometer ?? lc.miles);
-  const price = asNum(lc.price ?? lc.ask ?? lc.list_price ?? lc.msrp);
-
-  const location =
-    (lc.location ||
-      [lc.loc, lc.city, lc.state].filter(Boolean).join(", "))?.toString().trim() || undefined;
-
-  // Status: accept several signals; default to "in stock" if sheet says available
-  let status = (lc.status || lc.availability || lc.available)?.toString().trim().toLowerCase();
-  if (status === "true" || status === "yes" || status === "available") status = "in stock";
-  if (!status) status = "in stock";
-
-  // Images: allow comma/semicolon/pipe separated
-  const imagesRaw = (lc.images || lc.photos || "").toString();
-  const images =
-    imagesRaw
-      .split(/[,;|]\s*/)
-      .map((s: string) => s.trim())
-      .filter(Boolean) || [];
-
-  // Title (fallback)
-  const title =
-    lc.title ||
-    [year, make, model, trim].filter(Boolean).join(" ").trim();
-
-  return {
-    vin,
-    year,
-    make,
-    model,
-    trim,
-    mileage,
-    location,
-    price,
-    status,
-    images,
-    title,
-    _raw: raw,
-  } as InvRow;
-}
-
-async function loadInventoryFromCSV(): Promise<InvRow[]> {
-  if (!CSV_URL) throw new Error("INVENTORY_CSV env var is not set");
-  const res = await fetch(CSV_URL);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch CSV (${res.status} ${res.statusText})`);
-  }
-  const text = await res.text();
-
-  const lines = text
-    .split(/\r?\n/)
-    .filter((l) => l.trim().length > 0);
-
-  if (lines.length === 0) return [];
-
-  const headers = splitCSVLine(lines[0]).map((h) => h.trim());
-  const rows: InvRow[] = [];
-
-  for (let i = 1; i < lines.length; i++) {
-    const cols = splitCSVLine(lines[i]);
-    const raw: Record<string, string> = {};
-    headers.forEach((h, idx) => {
-      raw[h] = cols[idx] ?? "";
-    });
-    const norm = normalizeRow(raw);
-    if (norm.vin) rows.push(norm);
-  }
-  return rows;
-}
-
-async function ensureInventory(force = false) {
-  const now = Date.now();
-  if (force || now - lastLoad > REFRESH_MS || INVENTORY.length === 0) {
-    try {
-      const data = await loadInventoryFromCSV();
-      INVENTORY = data;
-      lastLoad = now;
-      lastError = null;
-      console.log(`[inventory] loaded ${INVENTORY.length} rows from CSV`);
-    } catch (e: any) {
-      lastError = e?.message || String(e);
-      console.error("[inventory] load error:", lastError);
-    }
-  }
-}
-
-// initial load (non-blocking)
-ensureInventory(true);
-// background refresher
-setInterval(() => ensureInventory(false), REFRESH_MS);
-
-// -------------------- Routes --------------------
-
-// Health under /api
-router.get("/health", (_req: Request, res: Response) => {
-  res.json({ ok: true, inventory: INVENTORY.length, lastError });
 });
 
-// SEARCH: /api/search  (accepts q, page, pagesize, dir)
+/** Search: /api/search?q=...&page=&pagesize=&dir=asc|desc */
 router.get("/search", async (req: Request, res: Response) => {
-  await ensureInventory(false);
+  const q = (req.query.q as string) || "";
+  const page = Math.max(parseInt(String(req.query.page || "1"), 10) || 1, 1);
+  const pagesize = Math.min(
+    Math.max(parseInt(String(req.query.pagesize || "20"), 10) || 20, 1),
+    50
+  );
+  const dir = String(req.query.dir || "asc").toLowerCase() === "desc" ? "desc" : "asc";
+
+  const where = q
+    ? `where
+        vin ilike $1 or
+        make ilike $1 or
+        model ilike $1 or
+        trim ilike $1 or
+        coalesce(title,'') ilike $1 or
+        coalesce(keywords,'') ilike $1`
+    : "";
+
+  const params: any[] = [];
+  if (q) params.push(`%${q}%`);
 
   try {
-    const q = String(req.query.q ?? "").trim().toLowerCase();
-    const page = Math.max(1, Number(req.query.page || 1));
-    const pagesize = Math.min(50, Math.max(1, Number(req.query.pagesize || 20)));
+    const countSql = `select count(*)::int as n from vehicles ${where}`;
+    const { rows: cntRows } = await pool.query(countSql, params);
+    const total = cntRows?.[0]?.n ?? 0;
+    const offset = (page - 1) * pagesize;
 
-    let source = INVENTORY;
-
-    if (q) {
-      source = source.filter((r) => {
-        const hay = [
-          r.vin,
-          r.make,
-          r.model,
-          r.trim,
-          r.location,
-          r.status,
-          r.year?.toString(),
-          r.price?.toString(),
-          r.mileage?.toString(),
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        return hay.includes(q);
-      });
-    }
-
-    const total = source.length;
-    const totalPages = Math.max(1, Math.ceil(total / pagesize));
-    const start = (page - 1) * pagesize;
-    const results = source.slice(start, start + pagesize);
+    const dataSql = `
+      select vin, year, make, model, trim, price, mileage, location,
+             condition, keywords,
+             coalesce(title, concat(year, ' ', make, ' ', model, ' ', coalesce(trim,''))) as title
+      from vehicles
+      ${where}
+      order by year ${dir}, make ${dir}, model ${dir}, vin ${dir}
+      limit $${params.length + 1} offset $${params.length + 2}
+    `;
+    const { rows } = await pool.query(dataSql, [...params, pagesize, offset]);
 
     res.json({
       ok: true,
-      results,
-      count: results.length,
+      query: { q, page, pagesize, dir },
+      count: rows.length,
       total,
-      totalPages,
-      page,
-      pagesize,
-      lastError,
+      totalPages: Math.max(Math.ceil(total / pagesize), 1),
+      results: rows,
     });
   } catch (e: any) {
-    res.status(200).json({ ok: false, error: e?.message || String(e) });
+    res.status(500).json({ ok: false, error: e?.message || String(e) });
   }
 });
 
-// VDP: /api/vehicles/:vin
+/** VDP: /api/vehicles/:vin */
 router.get("/vehicles/:vin", async (req: Request, res: Response) => {
-  await ensureInventory(false);
+  const vin = String(req.params.vin || "").trim();
+  if (!vin) return res.status(400).json({ ok: false, error: "VIN required" });
 
-  const vin = String(req.params.vin);
-  const found = INVENTORY.find((r) => r.vin === vin);
-  if (!found) return res.json({ ok: false, error: "Not found" });
-  res.json({ ok: true, vehicle: found });
+  try {
+    const { rows } = await pool.query(
+      `select vin, year, make, model, trim, price, mileage, location, condition, keywords,
+              coalesce(title, concat(year, ' ', make, ' ', model, ' ', coalesce(trim,''))) as title
+       from vehicles where vin = $1`,
+      [vin]
+    );
+    if (!rows.length) return res.status(404).json({ ok: false, error: "Not found" });
+    res.json({ ok: true, vehicle: rows[0] });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
 });
 
-// Photos: /api/vehicles/:vin/photos
-router.get("/vehicles/:vin/photos", async (req: Request, res: Response) => {
-  await ensureInventory(false);
+/** INSERT helper */
+async function upsertVehicle(v: Vehicle) {
+  const title =
+    v.title ||
+    `${v.year ?? ""} ${v.make ?? ""} ${v.model ?? ""}${v.trim ? " " + v.trim : ""}`.trim();
 
-  const vin = String(req.params.vin);
-  const found = INVENTORY.find((r) => r.vin === vin);
-  const photos = found?.images ?? [];
-  res.json({ ok: true, photos, count: photos.length });
+  await pool.query(
+    `
+    insert into vehicles (vin, year, make, model, trim, price, mileage, location, condition, keywords, title)
+    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+    on conflict (vin) do update set
+      year=excluded.year,
+      make=excluded.make,
+      model=excluded.model,
+      trim=excluded.trim,
+      price=excluded.price,
+      mileage=excluded.mileage,
+      location=excluded.location,
+      condition=excluded.condition,
+      keywords=excluded.keywords,
+      title=excluded.title
+  `,
+    [
+      v.vin,
+      v.year ?? null,
+      v.make ?? null,
+      v.model ?? null,
+      v.trim ?? null,
+      v.price ?? null,
+      v.mileage ?? null,
+      v.location ?? null,
+      v.condition ?? null,
+      v.keywords ?? null,
+      title || null,
+    ]
+  );
+}
+
+/** Add single vehicle: POST /api/vehicles  (expects JSON Vehicle) */
+router.post("/vehicles", async (req: Request, res: Response) => {
+  const body = req.body as Vehicle;
+  if (!body?.vin) return res.status(400).json({ ok: false, error: "vin required" });
+
+  try {
+    await upsertVehicle(body);
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
 });
 
-// History: /api/vin/history?vin=...
-router.get("/vin/history", async (req: Request, res: Response) => {
-  // No external history yet—return empty.
-  res.json({ ok: true, type: "all", count: 0, events: [] });
+/** Bulk ingest: POST /api/ingest  (expects { vehicles: Vehicle[] } or Vehicle[]) */
+router.post("/ingest", async (req: Request, res: Response) => {
+  const payload = Array.isArray(req.body) ? req.body : req.body?.vehicles;
+  if (!Array.isArray(payload) || payload.length === 0) {
+    return res.status(400).json({ ok: false, error: "Provide array of vehicles" });
+  }
+  try {
+    for (const v of payload) {
+      if (v?.vin) await upsertVehicle(v as Vehicle);
+    }
+    res.json({ ok: true, count: payload.length });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
 });
 
 export default router;
