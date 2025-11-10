@@ -3,7 +3,7 @@
 // No external calls. All data is local dummy inventory.
 
 /**
- * Shape reference for each vehicle:
+ * Vehicle shape:
  * {
  *   vin: string,
  *   year: number,
@@ -13,7 +13,7 @@
  *   price: number,
  *   mileage: number,
  *   condition: "New" | "Used",
- *   location: string,          // short location label
+ *   location: string,
  *   dealer: {
  *     name: string,
  *     address: string,
@@ -28,12 +28,12 @@
  *   bodyStyle?: string,
  *   transmission?: string,
  *   fuelType?: string,
- *   description: string,       // may include fee language for price breakdown
- *   keywords?: string[],       // extra text for search
+ *   description: string,
+ *   keywords?: string[],
  * }
  */
 
-// Simple stock images (you can swap these for real URLs later)
+// Simple stock images (swap with real CDN later if desired)
 const STOCK_PHOTOS = {
   sedan:
     "https://images.pexels.com/photos/210019/pexels-photo-210019.jpeg?auto=compress&w=900",
@@ -393,12 +393,13 @@ const DUMMY_VEHICLES = [
   },
 ];
 
-// Simulate network latency so the UI can show loading states
-function delay(ms = 250) {
+// Simulate small latency for loading states
+function delay(ms = 200) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Text-search helper
+// --------- LOCAL SEARCH HELPERS ----------
+
 function matchesQuery(vehicle, normQ) {
   if (!normQ) return true;
   const haystack = [
@@ -416,6 +417,80 @@ function matchesQuery(vehicle, normQ) {
     .toLowerCase();
   return haystack.includes(normQ);
 }
+
+/**
+ * Analyze a vehicle description for dealer add-on fees.
+ * Returns an array of { label, amount }.
+ */
+export function analyzeFees(description = "") {
+  const text = String(description || "").toLowerCase();
+  const fees = [];
+
+  // Simple patterns: look for "$<amount>" near keywords.
+  const patterns = [
+    { key: "prep", label: "Preparation fee" },
+    { key: "preparation", label: "Preparation fee" },
+    { key: "processing", label: "Processing fee" },
+    { key: "doc", label: "Documentation fee" },
+    { key: "documentation", label: "Documentation fee" },
+    { key: "reconditioning", label: "Reconditioning fee" },
+    { key: "recon", label: "Reconditioning fee" },
+    { key: "inspection", label: "Inspection fee" },
+    { key: "protection", label: "Protection package" },
+    { key: "package", label: "Dealer package" },
+  ];
+
+  // Find all dollar amounts
+  const dollarRegex = /\$?\s*([0-9]{2,3}(?:,[0-9]{3})*|[1-9][0-9]{2,})/g;
+  let match;
+
+  while ((match = dollarRegex.exec(text))) {
+    const raw = match[1];
+    const amount = Number(raw.replace(/,/g, ""));
+    if (!amount || amount <= 0) continue;
+    const idx = match.index;
+
+    // Look a bit around the amount for context keyword
+    const windowStart = Math.max(0, idx - 40);
+    const windowEnd = idx + 40;
+    const snippet = text.slice(windowStart, windowEnd);
+
+    const pattern = patterns.find((p) => snippet.includes(p.key));
+    if (pattern) {
+      fees.push({
+        label: pattern.label,
+        amount,
+      });
+    }
+  }
+
+  // De-duplicate same label+amount pairs
+  const unique = [];
+  const seen = new Set();
+  for (const f of fees) {
+    const key = `${f.label}:${f.amount}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(f);
+    }
+  }
+
+  return unique;
+}
+
+/**
+ * Compute total price when including detected fees.
+ */
+export function computeTotalWithFees(basePrice, fees = []) {
+  const safeBase = Number(basePrice) || 0;
+  const extra = (fees || []).reduce(
+    (sum, f) => sum + (Number(f.amount) || 0),
+    0
+  );
+  return safeBase + extra;
+}
+
+// --------- EXPORTED "API" FUNCTIONS ----------
 
 /**
  * Search vehicles in the dummy inventory.
@@ -442,11 +517,18 @@ export async function searchVehicles({
   const start = (safePage - 1) * safeSize;
   const results = items.slice(start, start + safeSize);
 
+  // Attach fee breakdown + total for convenience
+  const enriched = results.map((v) => {
+    const fees = analyzeFees(v.description);
+    const totalWithFees = computeTotalWithFees(v.price, fees);
+    return { ...v, fees, totalWithFees };
+  });
+
   return {
     ok: true,
     query: { q, page: safePage, pagesize: safeSize, dir },
-    results,
-    count: results.length,
+    results: enriched,
+    count: enriched.length,
     total,
     totalPages: Math.max(1, Math.ceil(total / safeSize)),
   };
@@ -457,15 +539,24 @@ export async function searchVehicles({
  */
 export async function getVehicle(vin) {
   await delay();
-  const vehicle = DUMMY_VEHICLES.find((v) => v.vin === vin);
-  if (!vehicle) {
+  const v = DUMMY_VEHICLES.find((x) => x.vin === vin);
+  if (!v) {
     throw new Error("Not found");
   }
-  return { ok: true, vehicle };
+  const fees = analyzeFees(v.description);
+  const totalWithFees = computeTotalWithFees(v.price, fees);
+  return { ok: true, vehicle: { ...v, fees, totalWithFees } };
 }
 
-// For any future hooks/components that want full list
+/**
+ * For pages that want all demo vehicles.
+ */
 export async function listAllVehicles() {
   await delay();
-  return { ok: true, results: [...DUMMY_VEHICLES] };
+  const results = DUMMY_VEHICLES.map((v) => {
+    const fees = analyzeFees(v.description);
+    const totalWithFees = computeTotalWithFees(v.price, fees);
+    return { ...v, fees, totalWithFees };
+  });
+  return { ok: true, results };
 }
