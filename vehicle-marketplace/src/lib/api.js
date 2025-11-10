@@ -33,7 +33,6 @@
  * }
  */
 
-// Simple stock images (swap with real CDN later if desired)
 const STOCK_PHOTOS = {
   sedan:
     "https://images.pexels.com/photos/210019/pexels-photo-210019.jpeg?auto=compress&w=900",
@@ -393,12 +392,9 @@ const DUMMY_VEHICLES = [
   },
 ];
 
-// Simulate small latency for loading states
 function delay(ms = 200) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
-// --------- LOCAL SEARCH HELPERS ----------
 
 function matchesQuery(vehicle, normQ) {
   if (!normQ) return true;
@@ -418,15 +414,12 @@ function matchesQuery(vehicle, normQ) {
   return haystack.includes(normQ);
 }
 
-/**
- * Analyze a vehicle description for dealer add-on fees.
- * Returns an array of { label, amount }.
- */
+// -------- Fee analysis --------
+
 export function analyzeFees(description = "") {
   const text = String(description || "").toLowerCase();
   const fees = [];
 
-  // Simple patterns: look for "$<amount>" near keywords.
   const patterns = [
     { key: "prep", label: "Preparation fee" },
     { key: "preparation", label: "Preparation fee" },
@@ -440,7 +433,6 @@ export function analyzeFees(description = "") {
     { key: "package", label: "Dealer package" },
   ];
 
-  // Find all dollar amounts
   const dollarRegex = /\$?\s*([0-9]{2,3}(?:,[0-9]{3})*|[1-9][0-9]{2,})/g;
   let match;
 
@@ -449,22 +441,15 @@ export function analyzeFees(description = "") {
     const amount = Number(raw.replace(/,/g, ""));
     if (!amount || amount <= 0) continue;
     const idx = match.index;
-
-    // Look a bit around the amount for context keyword
     const windowStart = Math.max(0, idx - 40);
     const windowEnd = idx + 40;
     const snippet = text.slice(windowStart, windowEnd);
-
     const pattern = patterns.find((p) => snippet.includes(p.key));
     if (pattern) {
-      fees.push({
-        label: pattern.label,
-        amount,
-      });
+      fees.push({ label: pattern.label, amount });
     }
   }
 
-  // De-duplicate same label+amount pairs
   const unique = [];
   const seen = new Set();
   for (const f of fees) {
@@ -474,13 +459,9 @@ export function analyzeFees(description = "") {
       unique.push(f);
     }
   }
-
   return unique;
 }
 
-/**
- * Compute total price when including detected fees.
- */
 export function computeTotalWithFees(basePrice, fees = []) {
   const safeBase = Number(basePrice) || 0;
   const extra = (fees || []).reduce(
@@ -490,11 +471,17 @@ export function computeTotalWithFees(basePrice, fees = []) {
   return safeBase + extra;
 }
 
-// --------- EXPORTED "API" FUNCTIONS ----------
+// -------- Shipping calculator --------
 
-/**
- * Search vehicles in the dummy inventory.
- */
+export function calculateShipping(distanceMiles) {
+  const d = Number(distanceMiles);
+  if (!d || d <= 0) return 0;
+  if (d <= 100) return 250;
+  return 250 + 2 * (d - 100);
+}
+
+// -------- Public API functions --------
+
 export async function searchVehicles({
   q = "",
   page = 1,
@@ -506,7 +493,6 @@ export async function searchVehicles({
   const normQ = (q || "").toString().trim().toLowerCase();
   let items = DUMMY_VEHICLES.filter((v) => matchesQuery(v, normQ));
 
-  // Simple sort by price
   items.sort((a, b) =>
     dir === "desc" ? b.price - a.price : a.price - b.price
   );
@@ -515,10 +501,9 @@ export async function searchVehicles({
   const safePage = Math.max(1, Number(page) || 1);
   const safeSize = Math.max(1, Number(pagesize) || 20);
   const start = (safePage - 1) * safeSize;
-  const results = items.slice(start, start + safeSize);
+  const slice = items.slice(start, start + safeSize);
 
-  // Attach fee breakdown + total for convenience
-  const enriched = results.map((v) => {
+  const results = slice.map((v) => {
     const fees = analyzeFees(v.description);
     const totalWithFees = computeTotalWithFees(v.price, fees);
     return { ...v, fees, totalWithFees };
@@ -527,16 +512,13 @@ export async function searchVehicles({
   return {
     ok: true,
     query: { q, page: safePage, pagesize: safeSize, dir },
-    results: enriched,
-    count: enriched.length,
+    results,
+    count: results.length,
     total,
     totalPages: Math.max(1, Math.ceil(total / safeSize)),
   };
 }
 
-/**
- * Fetch a single vehicle by VIN.
- */
 export async function getVehicle(vin) {
   await delay();
   const v = DUMMY_VEHICLES.find((x) => x.vin === vin);
@@ -548,9 +530,6 @@ export async function getVehicle(vin) {
   return { ok: true, vehicle: { ...v, fees, totalWithFees } };
 }
 
-/**
- * For pages that want all demo vehicles.
- */
 export async function listAllVehicles() {
   await delay();
   const results = DUMMY_VEHICLES.map((v) => {
@@ -560,3 +539,14 @@ export async function listAllVehicles() {
   });
   return { ok: true, results };
 }
+
+// default export not strictly needed but kept if any legacy imports exist
+const api = {
+  searchVehicles,
+  getVehicle,
+  listAllVehicles,
+  analyzeFees,
+  computeTotalWithFees,
+  calculateShipping,
+};
+export default api;
