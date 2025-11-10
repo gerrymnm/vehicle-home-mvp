@@ -4,7 +4,6 @@ import { useParams, useNavigate } from "react-router-dom";
 import { getVehicle, calculateShipping } from "../lib/api.js";
 import ContactDealerModal from "../components/ContactDealerModal.jsx";
 
-// (styles omitted in this comment for brevity - they are identical to previous answer)
 const wrap = {
   maxWidth: 1120,
   margin: "24px auto",
@@ -20,17 +19,20 @@ const layout = {
 };
 
 const gallery = { display: "flex", flexDirection: "column", gap: "8px" };
+
 const mainImg = {
   width: "100%",
   borderRadius: "10px",
   objectFit: "cover",
   maxHeight: "380px",
 };
+
 const thumbRow = {
   display: "flex",
   gap: "6px",
   overflowX: "auto",
 };
+
 const thumb = (active) => ({
   width: 70,
   height: 52,
@@ -40,6 +42,7 @@ const thumb = (active) => ({
   cursor: "pointer",
   flexShrink: 0,
 });
+
 const dealerBox = {
   padding: "14px 16px",
   borderRadius: "10px",
@@ -48,6 +51,7 @@ const dealerBox = {
   background: "#f9fafb",
   fontSize: "13px",
 };
+
 const priceBox = {
   padding: "18px 16px",
   borderRadius: "12px",
@@ -55,12 +59,14 @@ const priceBox = {
   boxShadow: "0 4px 18px rgba(15,23,42,0.06)",
   background: "#ffffff",
 };
+
 const ctas = {
   display: "flex",
   flexDirection: "column",
   gap: "8px",
   marginTop: "14px",
 };
+
 const primaryBtn = {
   padding: "11px 10px",
   borderRadius: "999px",
@@ -72,17 +78,20 @@ const primaryBtn = {
   fontSize: "14px",
   width: "100%",
 };
+
 const ghostBtn = {
   ...primaryBtn,
   background: "#ffffff",
   color: "#111827",
   border: "1px solid #d1d5db",
 };
+
 const subtle = {
   fontSize: "11px",
   color: "#6b7280",
   marginTop: "4px",
 };
+
 const pill = {
   display: "inline-block",
   padding: "4px 9px",
@@ -93,12 +102,14 @@ const pill = {
   fontWeight: 500,
   marginRight: "6px",
 };
+
 const feeRow = {
   display: "flex",
   justifyContent: "space-between",
   fontSize: "11px",
   color: "#4b5563",
 };
+
 const totalRow = {
   ...feeRow,
   fontWeight: 600,
@@ -106,17 +117,54 @@ const totalRow = {
   borderTop: "1px solid #e5e7eb",
   paddingTop: "6px",
 };
+
 const sectionTitle = {
   fontSize: "15px",
   fontWeight: 600,
   margin: "14px 0 4px",
 };
+
 const bulletList = {
   margin: "0",
   paddingLeft: "16px",
   fontSize: "12px",
   color: "#4b5563",
 };
+
+// --- Helper: build out-the-door cost estimate from ZIP (demo logic) ---
+function buildCostBreakdown({ vehicle, zip }) {
+  if (!vehicle || !zip || zip.length < 5) return null;
+
+  const fees = vehicle.fees || [];
+  const feesTotal = fees.reduce((sum, f) => sum + (Number(f.amount) || 0), 0);
+
+  // Use detected doc fee if we have one; else assume $85 for demo.
+  const docFromFees =
+    fees.find((f) => /doc/i.test(f.label || ""))?.amount ?? null;
+  const docFee = Number(docFromFees) || 85;
+
+  const baseWithFees = vehicle.price + feesTotal;
+
+  // Very rough demo tax logic:
+  // If ZIP starts with "9" (e.g. CA-ish), use 9%, else 7%.
+  const taxRate = zip.startsWith("9") ? 0.09 : 0.07;
+  const tax = Math.round(baseWithFees * taxRate);
+
+  // Simple flat DMV estimate for demo.
+  const dmv = baseWithFees > 20000 ? 420 : 320;
+
+  const total = baseWithFees + tax + dmv + docFee;
+
+  return {
+    zip,
+    taxRate,
+    baseWithFees,
+    docFee,
+    tax,
+    dmv,
+    total,
+  };
+}
 
 export default function VehicleHome() {
   const { vin } = useParams();
@@ -126,9 +174,15 @@ export default function VehicleHome() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [contactOpen, setContactOpen] = useState(false);
+
   const [miles, setMiles] = useState("");
   const [shipping, setShipping] = useState(0);
 
+  const [zip, setZip] = useState("");
+  const [breakdown, setBreakdown] = useState(null);
+  const [autoLocated, setAutoLocated] = useState(false);
+
+  // Load vehicle
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -150,6 +204,31 @@ export default function VehicleHome() {
       cancelled = true;
     };
   }, [vin]);
+
+  // Auto-attempt location once (demo behavior)
+  useEffect(() => {
+    if (autoLocated || zip) return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+
+    navigator.geolocation.getCurrentPosition(
+      () => {
+        // For demo, assume a local ZIP (no external lookup).
+        setZip("94103");
+        setAutoLocated(true);
+      },
+      () => {
+        // ignore errors silently for now
+      },
+      { timeout: 2000 }
+    );
+  }, [autoLocated, zip]);
+
+  // Recompute breakdown when zip or vehicle changes
+  useEffect(() => {
+    if (!vehicle) return;
+    const next = buildCostBreakdown({ vehicle, zip });
+    setBreakdown(next);
+  }, [zip, vehicle]);
 
   const onMilesChange = (e) => {
     const value = e.target.value.replace(/[^\d]/g, "");
@@ -205,6 +284,7 @@ export default function VehicleHome() {
       </div>
 
       <div style={layout}>
+        {/* LEFT: MEDIA + DETAILS */}
         <div>
           <div style={gallery}>
             <img
@@ -285,6 +365,7 @@ export default function VehicleHome() {
           </div>
         </div>
 
+        {/* RIGHT: PRICE + CTAS */}
         <aside style={priceBox}>
           <div style={{ fontSize: "11px", color: "#6b7280" }}>
             Advertised price
@@ -295,6 +376,39 @@ export default function VehicleHome() {
           <div style={subtle}>
             Price set by dealer. Taxes, DMV fees, and government charges not
             included.
+          </div>
+
+          {/* Customer ZIP for total-cost estimate */}
+          <div style={{ marginTop: "8px" }}>
+            <div
+              style={{
+                fontSize: "11px",
+                color: "#4b5563",
+                marginBottom: 3,
+              }}
+            >
+              Enter your ZIP to estimate total cost
+            </div>
+            <input
+              value={zip}
+              onChange={(e) =>
+                setZip(e.target.value.replace(/[^\d]/g, "").slice(0, 5))
+              }
+              placeholder="e.g. 94103"
+              maxLength={5}
+              style={{
+                width: "100%",
+                padding: "7px 9px",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                fontSize: 12,
+              }}
+            />
+            {autoLocated && (
+              <div style={{ ...subtle, fontSize: 10 }}>
+                Using your device location (demo) to pre-fill ZIP.
+              </div>
+            )}
           </div>
 
           {fees.length > 0 && (
@@ -313,6 +427,45 @@ export default function VehicleHome() {
               <div style={subtle}>
                 Based on listing text. You can remove unwanted add-ons during
                 deal review.
+              </div>
+            </div>
+          )}
+
+          {/* Out-the-door breakdown */}
+          {breakdown && (
+            <div style={{ marginTop: "12px" }}>
+              <div style={sectionTitle}>Estimated out-the-door</div>
+              <div style={feeRow}>
+                <span>
+                  Vehicle price + add-ons
+                  <span style={{ color: "#9ca3af" }}>
+                    {" "}
+                    (ZIP {breakdown.zip})
+                  </span>
+                </span>
+                <span>${breakdown.baseWithFees.toLocaleString()}</span>
+              </div>
+              <div style={feeRow}>
+                <span>
+                  Taxes (~{Math.round(breakdown.taxRate * 100)}%)
+                </span>
+                <span>${breakdown.tax.toLocaleString()}</span>
+              </div>
+              <div style={feeRow}>
+                <span>DMV fees (est.)</span>
+                <span>${breakdown.dmv.toLocaleString()}</span>
+              </div>
+              <div style={feeRow}>
+                <span>Dealer documentation fee</span>
+                <span>${breakdown.docFee.toLocaleString()}</span>
+              </div>
+              <div style={totalRow}>
+                <span>Estimated total</span>
+                <span>${breakdown.total.toLocaleString()}</span>
+              </div>
+              <div style={{ ...subtle, marginTop: 2 }}>
+                Demo estimate only. Actual tax/DMV/doc fees depend on your
+                registration address and dealer terms.
               </div>
             </div>
           )}
@@ -338,6 +491,7 @@ export default function VehicleHome() {
             </button>
           </div>
 
+          {/* Shipping estimator */}
           <div id="shipping-section" style={{ marginTop: "16px" }}>
             <div style={sectionTitle}>Estimate shipping</div>
             <div
@@ -381,11 +535,10 @@ export default function VehicleHome() {
               </strong>
             </div>
             {shipping > 0 && (
-              <div
-                style={{ fontSize: "11px", color: "#6b7280" }}
-              >
-                Estimated total: $
-                {(totalWithFees + shipping).toLocaleString()}
+              <div style={{ fontSize: "11px", color: "#6b7280" }}>
+                Estimated vehicle + add-ons + shipping:
+                {" "}
+                ${ (totalWithFees + shipping).toLocaleString() }
               </div>
             )}
           </div>
