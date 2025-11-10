@@ -1,168 +1,471 @@
-// src/lib/api.js
-// Frontend-only API: dummy inventory + pricing helpers for MVP
+// vehicle-marketplace/src/lib/api.js
+// Pure front-end, in-memory demo API for the MVP marketplace.
+// No external calls. All data is local dummy inventory.
 
-// ---------- Dummy data ----------
+/**
+ * Shape reference for each vehicle:
+ * {
+ *   vin: string,
+ *   year: number,
+ *   make: string,
+ *   model: string,
+ *   trim?: string,
+ *   price: number,
+ *   mileage: number,
+ *   condition: "New" | "Used",
+ *   location: string,          // short location label
+ *   dealer: {
+ *     name: string,
+ *     address: string,
+ *     city: string,
+ *     state: string,
+ *     zip: string,
+ *     phone?: string,
+ *   },
+ *   photos: string[],
+ *   color?: string,
+ *   drivetrain?: string,
+ *   bodyStyle?: string,
+ *   transmission?: string,
+ *   fuelType?: string,
+ *   description: string,       // may include fee language for price breakdown
+ *   keywords?: string[],       // extra text for search
+ * }
+ */
 
-const vehicles = [
+// Simple stock images (you can swap these for real URLs later)
+const STOCK_PHOTOS = {
+  sedan:
+    "https://images.pexels.com/photos/210019/pexels-photo-210019.jpeg?auto=compress&w=900",
+  hatch:
+    "https://images.pexels.com/photos/210182/pexels-photo-210182.jpeg?auto=compress&w=900",
+  suv:
+    "https://images.pexels.com/photos/119435/pexels-photo-119435.jpeg?auto=compress&w=900",
+  truck:
+    "https://images.pexels.com/photos/120049/pexels-photo-120049.jpeg?auto=compress&w=900",
+  ev:
+    "https://images.pexels.com/photos/112460/pexels-photo-112460.jpeg?auto=compress&w=900",
+};
+
+const DUMMY_VEHICLES = [
   {
-    vin: "DUMMYMAZDA001",
+    vin: "3MZBPACL4PM300002",
     year: 2023,
     make: "Mazda",
-    model: "CX-5",
-    trim: "Preferred",
-    price: 28950,
-    mileage: 12450,
-    location: "San Rafael, CA",
+    model: "Mazda3",
+    trim: "Select",
+    price: 23950,
+    mileage: 5800,
+    condition: "Used",
+    location: "Bay Area, CA",
     dealer: {
       name: "Sunrise Mazda",
-      address: "123 Main St, San Rafael, CA 94901",
-      phone: "(415) 555-0123",
-      email: "sales@sunrisemazda.com",
+      address: "123 Market St",
+      city: "Oakland",
+      state: "CA",
+      zip: "94612",
+      phone: "(510) 555-0123",
     },
-    images: [
-      "https://images.pexels.com/photos/210019/pexels-photo-210019.jpeg",
-      "https://images.pexels.com/photos/210182/pexels-photo-210182.jpeg",
-    ],
-    // Intentionally contains add-on language for parsing demo
+    photos: [STOCK_PHOTOS.sedan, STOCK_PHOTOS.sedan],
+    color: "Snowflake White Pearl",
+    drivetrain: "FWD",
+    bodyStyle: "Sedan",
+    transmission: "Automatic",
+    fuelType: "Gasoline",
     description:
-      "Dealer demo. Includes $799 preparation fee and $599 appearance package not included in advertised price. Doc fee $85 extra.",
-    history: {
-      owners: 1,
-      accidents: 0,
-      usage: "Personal",
-      highlights: ["Clean title", "Regular oil changes"],
-    },
+      "One-owner 2023 Mazda3 Select with premium package. Dealer preparation fee $395 and documentation fee $85 not included in advertised price.",
+    keywords: ["mazda", "mazda3", "select", "sunrise mazda"],
   },
   {
-    vin: "DUMMYVW001",
+    vin: "JM1BPBLL9M1300001",
+    year: 2021,
+    make: "Mazda",
+    model: "Mazda3",
+    trim: "Preferred",
+    price: 20995,
+    mileage: 24500,
+    condition: "Used",
+    location: "Marin County, CA",
+    dealer: {
+      name: "Marin Auto Group",
+      address: "456 Shoreline Blvd",
+      city: "San Rafael",
+      state: "CA",
+      zip: "94901",
+      phone: "(415) 555-0134",
+    },
+    photos: [STOCK_PHOTOS.hatch],
+    color: "Deep Crystal Blue",
+    drivetrain: "FWD",
+    bodyStyle: "Hatchback",
+    transmission: "Automatic",
+    fuelType: "Gasoline",
+    description:
+      "Clean Carfax. Includes reconditioning fee $695 and processing fee $199 disclosed in dealer comments.",
+    keywords: ["mazda", "mazda3", "preferred", "marin"],
+  },
+  {
+    vin: "1G1RC6S56JU111701",
+    year: 2018,
+    make: "Chevrolet",
+    model: "Volt",
+    trim: "LT",
+    price: 10994,
+    mileage: 60025,
+    condition: "Used",
+    location: "Sacramento, CA",
+    dealer: {
+      name: "Capital City EV Outlet",
+      address: "800 Greenway Dr",
+      city: "Sacramento",
+      state: "CA",
+      zip: "95814",
+      phone: "(916) 555-0101",
+    },
+    photos: [STOCK_PHOTOS.ev],
+    bodyStyle: "Hatchback",
+    drivetrain: "FWD",
+    fuelType: "Plug-in Hybrid",
+    transmission: "Automatic",
+    description:
+      "Affordable plug-in hybrid. Dealer doc fee $85 and electronic filing fee $30 apply at signing.",
+    keywords: ["chevy", "chevrolet", "volt", "ev", "plug-in"],
+  },
+  {
+    vin: "1G1JG6SB1L4126021",
+    year: 2020,
+    make: "Chevrolet",
+    model: "Sonic",
+    trim: "LT 5-Door Fleet",
+    price: 11594,
+    mileage: 51773,
+    condition: "Used",
+    location: "San Jose, CA",
+    dealer: {
+      name: "Valley Budget Motors",
+      address: "900 Airport Pkwy",
+      city: "San Jose",
+      state: "CA",
+      zip: "95110",
+    },
+    photos: [STOCK_PHOTOS.hatch],
+    bodyStyle: "Hatchback",
+    drivetrain: "FWD",
+    fuelType: "Gasoline",
+    transmission: "Automatic",
+    description:
+      "Great commuter hatch. Prep fee $295 and safety inspection fee $120 mentioned in dealer notes.",
+    keywords: ["chevrolet", "sonic", "lt"],
+  },
+  {
+    vin: "3C4PDCGBXLT265088",
+    year: 2020,
+    make: "Dodge",
+    model: "Journey",
+    trim: "Crossroad",
+    price: 13594,
+    mileage: 79394,
+    condition: "Used",
+    location: "Fresno, CA",
+    dealer: {
+      name: "Central Valley Auto Plaza",
+      address: "1200 Freeway Dr",
+      city: "Fresno",
+      state: "CA",
+      zip: "93722",
+    },
+    photos: [STOCK_PHOTOS.suv],
+    bodyStyle: "SUV",
+    drivetrain: "FWD",
+    fuelType: "Gasoline",
+    transmission: "Automatic",
+    description:
+      "Third-row seating. Dealer processing fee $199 extra. No prep add-ons.",
+    keywords: ["dodge", "journey", "crossroad", "suv"],
+  },
+  {
+    vin: "1GKKNKLA0HZ172549",
+    year: 2017,
+    make: "GMC",
+    model: "Acadia",
+    trim: "SLE",
+    price: 14794,
+    mileage: 85980,
+    condition: "Used",
+    location: "Oakland, CA",
+    dealer: {
+      name: "Sunrise Mazda (Used Superstore)",
+      address: "1300 Market St",
+      city: "Oakland",
+      state: "CA",
+      zip: "94612",
+    },
+    photos: [STOCK_PHOTOS.suv],
+    bodyStyle: "SUV",
+    drivetrain: "FWD",
+    fuelType: "Gasoline",
+    transmission: "Automatic",
+    description:
+      "Well maintained. Reconditioning fee $495 listed in dealer comments.",
+    keywords: ["gmc", "acadia", "sle", "suv"],
+  },
+  {
+    vin: "WVWPR7AU4KW905937",
     year: 2019,
     make: "Volkswagen",
     model: "e-Golf",
     trim: "SEL Premium",
     price: 17988,
     mileage: 60999,
+    condition: "Used",
+    location: "San Francisco, CA",
+    dealer: {
+      name: "City EV Direct",
+      address: "200 Embarcadero",
+      city: "San Francisco",
+      state: "CA",
+      zip: "94105",
+    },
+    photos: [STOCK_PHOTOS.ev],
+    bodyStyle: "Hatchback",
+    drivetrain: "FWD",
+    fuelType: "Electric",
+    transmission: "Single-speed",
+    description:
+      "Loaded EV hatch. Dealer prep $395 and doc fee $85 not included.",
+    keywords: ["vw", "volkswagen", "egolf", "ev"],
+  },
+  {
+    vin: "JTJBARBZ6G2095696",
+    year: 2016,
+    make: "Lexus",
+    model: "NX",
+    trim: "200t",
+    price: 19494,
+    mileage: 95269,
+    condition: "Used",
+    location: "Daly City, CA",
+    dealer: {
+      name: "Peninsula Luxury Motors",
+      address: "500 Skyline Blvd",
+      city: "Daly City",
+      state: "CA",
+      zip: "94015",
+    },
+    photos: [STOCK_PHOTOS.suv],
+    bodyStyle: "SUV",
+    drivetrain: "AWD",
+    fuelType: "Gasoline",
+    transmission: "Automatic",
+    description:
+      "Turbo AWD luxury. Dealer documentation fee $85 applies. No surprise add-ons.",
+    keywords: ["lexus", "nx", "200t", "awd", "luxury"],
+  },
+  {
+    vin: "4S4BSATC8K3332814",
+    year: 2019,
+    make: "Subaru",
+    model: "Outback",
+    trim: "2.5i Touring",
+    price: 19894,
+    mileage: 80299,
+    condition: "Used",
+    location: "Santa Rosa, CA",
+    dealer: {
+      name: "North Bay Subaru",
+      address: "700 Redwood Hwy",
+      city: "Santa Rosa",
+      state: "CA",
+      zip: "95401",
+    },
+    photos: [STOCK_PHOTOS.suv],
+    bodyStyle: "Wagon",
+    drivetrain: "AWD",
+    fuelType: "Gasoline",
+    transmission: "CVT",
+    description:
+      "Touring with Eyesight. Dealer adds protection package $595 and prep $295 (both shown as fees).",
+    keywords: ["subaru", "outback", "touring", "awd"],
+  },
+  {
+    vin: "3GCUKRERXHG418113",
+    year: 2017,
+    make: "Chevrolet",
+    model: "Silverado 1500",
+    trim: "LT",
+    price: 20592,
+    mileage: 144820,
+    condition: "Used",
+    location: "Modesto, CA",
+    dealer: {
+      name: "Central Truck Center",
+      address: "400 Service Rd",
+      city: "Modesto",
+      state: "CA",
+      zip: "95354",
+    },
+    photos: [STOCK_PHOTOS.truck],
+    bodyStyle: "Truck",
+    drivetrain: "4x4",
+    fuelType: "Gasoline",
+    transmission: "Automatic",
+    description:
+      "Work-ready 4x4. Reconditioning fee $695 and doc fee $85 disclosed.",
+    keywords: ["chevy", "silverado", "truck", "4x4"],
+  },
+  {
+    vin: "JF2SKARC3LH581099",
+    year: 2020,
+    make: "Subaru",
+    model: "Forester",
+    trim: "Sport",
+    price: 21494,
+    mileage: 73572,
+    condition: "Used",
+    location: "Berkeley, CA",
+    dealer: {
+      name: "Bayline Subaru",
+      address: "1800 University Ave",
+      city: "Berkeley",
+      state: "CA",
+      zip: "94703",
+    },
+    photos: [STOCK_PHOTOS.suv],
+    bodyStyle: "SUV",
+    drivetrain: "AWD",
+    fuelType: "Gasoline",
+    transmission: "CVT",
+    description:
+      "Sport trim in orange accents. Dealer prep $295, doc $85 extra.",
+    keywords: ["subaru", "forester", "sport", "awd"],
+  },
+  {
+    vin: "KL77LFEP7SC344700",
+    year: 2025,
+    make: "Chevrolet",
+    model: "Trax",
+    trim: "LS",
+    price: 21895,
+    mileage: 12,
+    condition: "New",
     location: "Oakland, CA",
     dealer: {
-      name: "Bay City Autos",
-      address: "456 Harbor Blvd, Oakland, CA 94607",
-      phone: "(510) 555-0199",
-      email: "sales@baycityautos.com",
+      name: "Sunrise Chevy",
+      address: "1400 Market St",
+      city: "Oakland",
+      state: "CA",
+      zip: "94612",
     },
-    images: [
-      "https://images.pexels.com/photos/210019/pexels-photo-210019.jpeg",
-    ],
+    photos: [STOCK_PHOTOS.suv],
+    bodyStyle: "SUV",
+    drivetrain: "FWD",
+    fuelType: "Gasoline",
+    transmission: "Automatic",
     description:
-      "Price excludes $399 processing fee and optional $995 protection package.",
-    history: {
-      owners: 2,
-      accidents: 0,
-      usage: "Lease return",
-      highlights: ["Low battery degradation", "Complete records available"],
+      "All-new Trax LS. Advertised price excludes doc fee $85 and optional protection packages.",
+    keywords: ["chevy", "trax", "new"],
+  },
+  {
+    vin: "2C3CDXHGXMH657079",
+    year: 2021,
+    make: "Dodge",
+    model: "Charger",
+    trim: "GT RWD",
+    price: 22894,
+    mileage: 58717,
+    condition: "Used",
+    location: "Concord, CA",
+    dealer: {
+      name: "East Bay Performance Auto",
+      address: "600 Main St",
+      city: "Concord",
+      state: "CA",
+      zip: "94520",
     },
+    photos: [STOCK_PHOTOS.sedan],
+    bodyStyle: "Sedan",
+    drivetrain: "RWD",
+    fuelType: "Gasoline",
+    transmission: "Automatic",
+    description:
+      "Sporty GT with Blacktop package. Dealer processing fee $199 and prep fee $395 apply.",
+    keywords: ["dodge", "charger", "gt"],
   },
 ];
 
-// ---------- Fee parsing ----------
-
-const FEE_PATTERNS = [
-  { keys: ["preparation fee", "prep fee"], label: "Preparation Fee" },
-  { keys: ["processing fee"], label: "Processing Fee" },
-  { keys: ["doc fee", "documentation fee"], label: "Documentation Fee" },
-  { keys: ["reconditioning fee", "recon fee"], label: "Reconditioning Fee" },
-  { keys: ["appearance package"], label: "Appearance Package" },
-  { keys: ["protection package"], label: "Protection Package" },
-];
-
-export function analyzeFees(description) {
-  if (!description) return [];
-  const fees = [];
-  const lower = description.toLowerCase();
-
-  for (const pattern of FEE_PATTERNS) {
-    for (const key of pattern.keys) {
-      const idx = lower.indexOf(key);
-      if (idx === -1) continue;
-
-      const snippet = description.slice(idx, idx + 80);
-      const match = snippet.match(/\$?\s*([0-9]{2,6})/);
-      const amount = match ? Number(match[1]) : null;
-
-      // de-dupe by label
-      if (!fees.some((f) => f.label === pattern.label && f.amount === amount)) {
-        fees.push({ label: pattern.label, amount });
-      }
-    }
-  }
-
-  return fees;
+// Simulate network latency so the UI can show loading states
+function delay(ms = 250) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function computeTotalWithFees(basePrice, fees) {
-  if (!basePrice) return null;
-  const extra = (fees || [])
-    .filter((f) => typeof f.amount === "number" && !Number.isNaN(f.amount))
-    .reduce((sum, f) => sum + f.amount, 0);
-  return basePrice + extra;
+// Text-search helper
+function matchesQuery(vehicle, normQ) {
+  if (!normQ) return true;
+  const haystack = [
+    vehicle.year,
+    vehicle.make,
+    vehicle.model,
+    vehicle.trim,
+    vehicle.vin,
+    vehicle.location,
+    vehicle.dealer?.name,
+    ...(vehicle.keywords || []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(normQ);
 }
 
-// ---------- Shipping for "Buy Online" ----------
-// $250 flat for <=100 miles; $2/mi for every mile after that.
+/**
+ * Search vehicles in the dummy inventory.
+ */
+export async function searchVehicles({
+  q = "",
+  page = 1,
+  pagesize = 20,
+  dir = "asc",
+} = {}) {
+  await delay();
 
-export function calculateShipping(miles) {
-  const d = Number(miles);
-  if (!Number.isFinite(d) || d <= 0) return null;
-  if (d <= 100) return 250;
-  return 250 + (d - 100) * 2;
-}
+  const normQ = (q || "").toString().trim().toLowerCase();
+  let items = DUMMY_VEHICLES.filter((v) => matchesQuery(v, normQ));
 
-// ---------- Dummy search & lookup ----------
+  // Simple sort by price
+  items.sort((a, b) =>
+    dir === "desc" ? b.price - a.price : a.price - b.price
+  );
 
-export async function searchVehicles({ q = "", page = 1, pagesize = 20 } = {}) {
-  const query = q.trim().toLowerCase();
-  let filtered = vehicles;
-
-  if (query) {
-    filtered = vehicles.filter((v) => {
-      const haystack = [
-        v.vin,
-        v.year,
-        v.make,
-        v.model,
-        v.trim,
-        v.location,
-        v.dealer?.name,
-        v.description,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(query);
-    });
-  }
-
-  const start = (page - 1) * pagesize;
-  const slice = filtered.slice(start, start + pagesize);
+  const total = items.length;
+  const safePage = Math.max(1, Number(page) || 1);
+  const safeSize = Math.max(1, Number(pagesize) || 20);
+  const start = (safePage - 1) * safeSize;
+  const results = items.slice(start, start + safeSize);
 
   return {
     ok: true,
-    query: { q, page, pagesize },
-    count: slice.length,
-    total: filtered.length,
-    totalPages: Math.max(1, Math.ceil(filtered.length / pagesize)),
-    results: slice,
+    query: { q, page: safePage, pagesize: safeSize, dir },
+    results,
+    count: results.length,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / safeSize)),
   };
 }
 
+/**
+ * Fetch a single vehicle by VIN.
+ */
 export async function getVehicle(vin) {
-  const v = vehicles.find((x) => x.vin === vin);
-  if (!v) throw new Error("Not found");
-  const fees = analyzeFees(v.description);
-  return {
-    ok: true,
-    vehicle: {
-      ...v,
-      fees,
-      totalWithFees: computeTotalWithFees(v.price, fees),
-    },
-  };
+  await delay();
+  const vehicle = DUMMY_VEHICLES.find((v) => v.vin === vin);
+  if (!vehicle) {
+    throw new Error("Not found");
+  }
+  return { ok: true, vehicle };
+}
+
+// For any future hooks/components that want full list
+export async function listAllVehicles() {
+  await delay();
+  return { ok: true, results: [...DUMMY_VEHICLES] };
 }
