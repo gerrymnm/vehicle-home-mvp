@@ -14,8 +14,8 @@ const err = { color: "crimson", marginTop: 12 };
 const hint = { color: "#777", fontSize: 12, margin: "4px 0 16px" };
 
 function formatMoney(v) {
-  if (v == null || Number.isNaN(v)) return "--";
-  return v.toLocaleString("en-US", {
+  if (v == null || Number.isNaN(Number(v))) return "--";
+  return Number(v).toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
     maximumFractionDigits: 0,
@@ -24,9 +24,7 @@ function formatMoney(v) {
 
 function calcDefaultDown(total) {
   if (!total || total <= 0) return 0;
-  // 10% rounded up to nearest $1,000
   let down = Math.ceil((total * 0.1) / 1000) * 1000;
-  // Ensure loan amount not below $5,000
   if (total - down < 5000) {
     down = Math.max(0, total - 5000);
   }
@@ -40,7 +38,7 @@ function calcMonthly(total, down, termMonths, apr = 0.075) {
   if (loan <= 0) return 0;
 
   const monthlyRate = apr / 12;
-  if (monthlyRate === 0) return loan / termMonths;
+  if (!monthlyRate) return loan / termMonths;
 
   const pow = Math.pow(1 + monthlyRate, termMonths);
   const payment = (loan * monthlyRate * pow) / (pow - 1);
@@ -64,8 +62,10 @@ export default function Search() {
         setError("");
         return;
       }
+
       setLoading(true);
       setError("");
+
       try {
         const data = await searchVehicles({
           q: query,
@@ -76,17 +76,19 @@ export default function Search() {
 
         const list = Array.isArray(data.results) ? data.results : [];
 
-        // Enrich each vehicle with fee + payment teaser for SRP
         const enriched = list.map((v) => {
           const basePrice = Number(v.price) || 0;
           const desc =
             v.description ||
             v.comments ||
-            v.highlights ||
-            ""; // whatever dummy field exists
+            (Array.isArray(v.highlights)
+              ? v.highlights.join(" ")
+              : v.highlights) ||
+            "";
 
           const feeAnalysis = analyzeFees(desc);
-          const total = computeTotalWithFees(basePrice, feeAnalysis);
+          const totals = computeTotalWithFees(basePrice, feeAnalysis);
+          const total = totals.total || basePrice;
 
           const term = 72;
           const down = calcDefaultDown(total);
@@ -99,7 +101,6 @@ export default function Search() {
               down,
               term,
               monthly,
-              feeAnalysis,
             },
           };
         });
@@ -113,6 +114,7 @@ export default function Search() {
         setLoading(false);
       }
     };
+
     run();
   }, [params, page]);
 
@@ -174,11 +176,11 @@ export default function Search() {
             <ul style={{ listStyle: "none", padding: 0, marginTop: 8 }}>
               {results.map((r) => {
                 const price = Number(r.price) || 0;
-                const teaser = r._vh || {};
-                const monthly = teaser.monthly;
-                const down = teaser.down;
-                const term = teaser.term;
-                const total = teaser.total;
+                const meta = r._vh || {};
+                const total = meta.total;
+                const monthly = meta.monthly;
+                const down = meta.down;
+                const term = meta.term;
 
                 return (
                   <li
@@ -290,8 +292,7 @@ export default function Search() {
                                 color: "#6b7280",
                               }}
                             >
-                              Est. out-the-door
-                              <span> (price + fees/tax/DMV)</span>
+                              Est. out-the-door (price + est. fees/tax/DMV)
                             </div>
                           </div>
                         )}
@@ -320,7 +321,6 @@ export default function Search() {
                         )}
                       </div>
 
-                      {/* Tag line */}
                       <div
                         style={{
                           marginTop: 4,
@@ -328,8 +328,8 @@ export default function Search() {
                           color: "#93a3b8",
                         }}
                       >
-                        Transparent fees previewed. Exact totals on vehicle
-                        page.
+                        Transparent fees preview. Exact totals & shipping on
+                        vehicle page.
                       </div>
                     </div>
                   </li>

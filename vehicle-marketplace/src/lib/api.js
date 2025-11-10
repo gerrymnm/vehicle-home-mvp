@@ -1,41 +1,14 @@
 // vehicle-marketplace/src/lib/api.js
+//
+// Frontend-only API helpers for the MVP.
+// - No external systems.
+// - Dummy inventory for search + VDP.
+// - Fee analysis + total cost + shipping helpers.
 
-// ---- Dummy inventory for MVP (frontend only) ----
-
-const BASE_PHOTOS = [
-  "https://images.pexels.com/photos/210019/pexels-photo-210019.jpeg?auto=compress&w=1200",
-  "https://images.pexels.com/photos/210182/pexels-photo-210182.jpeg?auto=compress&w=1200",
-  "https://images.pexels.com/photos/248747/pexels-photo-248747.jpeg?auto=compress&w=1200",
-];
-
-const DEALERS = {
-  marin: {
-    name: "Marin Auto Group",
-    address: "456 Shoreline Blvd",
-    city: "San Rafael",
-    state: "CA",
-    zip: "94901",
-    phone: "(415) 555-0134",
-  },
-  bay: {
-    name: "Bay City Motors",
-    address: "1200 Market St",
-    city: "Oakland",
-    state: "CA",
-    zip: "94607",
-    phone: "(510) 555-0199",
-  },
-  coastal: {
-    name: "Coastal EV & Hybrid",
-    address: "88 Ocean Ave",
-    city: "San Francisco",
-    state: "CA",
-    zip: "94112",
-    phone: "(415) 555-0822",
-  },
-};
-
-const RAW_VEHICLES = [
+//
+// Dummy vehicles used for both search and VDP
+//
+export const DUMMY_VEHICLES = [
   {
     vin: "JM1BPBLL9M1300001",
     year: 2021,
@@ -44,37 +17,19 @@ const RAW_VEHICLES = [
     trim: "Preferred",
     price: 20995,
     mileage: 24500,
-    condition: "Used",
-    location: "Marin County, CA",
-    bodyStyle: "Hatchback",
-    drivetrain: "FWD",
-    transmission: "Automatic",
-    fuelType: "Gasoline",
-    color: "Deep Crystal Blue",
-    dealer: DEALERS.marin,
-    photos: BASE_PHOTOS,
+    location: "San Rafael, CA",
+    dealerName: "Marin Auto Group",
+    dealerAddress: "456 Shoreline Blvd, San Rafael, CA 94901",
+    dealerPhone: "(415) 555-0134",
+    highlights: [
+      "2021 Mazda Mazda3 Preferred",
+      "24,500 miles",
+      "Hatchback",
+      "Automatic",
+      "Deep Crystal Blue",
+    ],
     description:
       "Clean Carfax Mazda3 Preferred with premium audio and safety tech. Includes reconditioning fee $695 and processing fee $199 disclosed in dealer comments.",
-  },
-  {
-    vin: "3MZBPAEM1PM300002",
-    year: 2023,
-    make: "Mazda",
-    model: "Mazda3",
-    trim: "Select",
-    price: 23950,
-    mileage: 5800,
-    condition: "Used",
-    location: "Bay Area, CA",
-    bodyStyle: "Sedan",
-    drivetrain: "FWD",
-    transmission: "Automatic",
-    fuelType: "Gasoline",
-    color: "Snowflake White",
-    dealer: DEALERS.coastal,
-    photos: BASE_PHOTOS,
-    description:
-      "Off-lease Mazda3 Select with Apple CarPlay and full safety suite. Dealer charges a documentation fee of $85.",
   },
   {
     vin: "1G1RC6S56JU111701",
@@ -84,17 +39,13 @@ const RAW_VEHICLES = [
     trim: "LT",
     price: 10994,
     mileage: 60025,
-    condition: "Used",
     location: "Bay Area, CA",
-    bodyStyle: "Hatchback",
-    drivetrain: "FWD",
-    transmission: "Automatic",
-    fuelType: "Plug-in Hybrid",
-    color: "Silver Ice Metallic",
-    dealer: DEALERS.coastal,
-    photos: BASE_PHOTOS,
+    dealerName: "SF EV Outlet",
+    dealerAddress: "100 Market St, San Francisco, CA 94105",
+    dealerPhone: "(415) 555-1000",
+    highlights: ["Plug-in hybrid", "Bluetooth", "Backup camera"],
     description:
-      "Volt LT with comfort package. Dealer lists a $495 prep fee and $199 processing fee.",
+      "Dealer doc fee $395 and prep fee $295 may apply. Great commuter EV with HOV history.",
   },
   {
     vin: "1G1JG6SB1L4126021",
@@ -104,17 +55,28 @@ const RAW_VEHICLES = [
     trim: "LT 5-Door Fleet",
     price: 11594,
     mileage: 51773,
-    condition: "Used",
-    location: "Bay Area, CA",
-    bodyStyle: "Hatchback",
-    drivetrain: "FWD",
-    transmission: "Automatic",
-    fuelType: "Gasoline",
-    color: "Red Hot",
-    dealer: DEALERS.bay,
-    photos: BASE_PHOTOS,
+    location: "Oakland, CA",
+    dealerName: "East Bay Motors",
+    dealerAddress: "2500 Broadway, Oakland, CA 94612",
+    dealerPhone: "(510) 555-0220",
+    highlights: ["Hatchback", "Apple CarPlay", "Android Auto"],
+    description: "No hidden add-ons. Standard doc fee $85 only.",
+  },
+  {
+    vin: "1G1BD5SM6J7152084",
+    year: 2018,
+    make: "Chevrolet",
+    model: "Cruze",
+    trim: "LT",
+    price: 12994,
+    mileage: 46724,
+    location: "San Jose, CA",
+    dealerName: "South Bay Auto Plaza",
+    dealerAddress: "900 Capitol Expy, San Jose, CA 95136",
+    dealerPhone: "(408) 555-0330",
+    highlights: ["Turbo", "Bluetooth", "One-owner"],
     description:
-      "Former fleet Sonic LT. No hidden add-ons mentioned. Straightforward pricing.",
+      "Includes $499 processing fee and $399 reconditioning fee listed below.",
   },
   {
     vin: "3C4PDCGBXLT265088",
@@ -124,17 +86,13 @@ const RAW_VEHICLES = [
     trim: "Crossroad",
     price: 13594,
     mileage: 79394,
-    condition: "Used",
-    location: "Bay Area, CA",
-    bodyStyle: "SUV",
-    drivetrain: "FWD",
-    transmission: "Automatic",
-    fuelType: "Gasoline",
-    color: "White",
-    dealer: DEALERS.bay,
-    photos: BASE_PHOTOS,
+    location: "Sacramento, CA",
+    dealerName: "Capital City Auto",
+    dealerAddress: "321 Main St, Sacramento, CA 95814",
+    dealerPhone: "(916) 555-0440",
+    highlights: ["3rd-row seating", "Roof rails"],
     description:
-      "Journey Crossroad with third-row seating. Dealer notes a reconditioning fee $695.",
+      "Dealer documentation fee $399. Reconditioning fee $695. No other add-ons.",
   },
   {
     vin: "1GKKNKLA0HZ172549",
@@ -144,17 +102,13 @@ const RAW_VEHICLES = [
     trim: "SLE",
     price: 14794,
     mileage: 85980,
-    condition: "Used",
-    location: "Marin County, CA",
-    bodyStyle: "SUV",
-    drivetrain: "FWD",
-    transmission: "Automatic",
-    fuelType: "Gasoline",
-    color: "Gray",
-    dealer: DEALERS.marin,
-    photos: BASE_PHOTOS,
+    location: "Concord, CA",
+    dealerName: "Delta Auto Group",
+    dealerAddress: "800 Contra Costa Blvd, Concord, CA 94523",
+    dealerPhone: "(925) 555-0550",
+    highlights: ["Third row", "Bluetooth"],
     description:
-      "Great family SUV. Dealer mentions $395 protection package and $199 processing fee.",
+      "Standard doc fee $85. No recon fee mentioned. Family SUV ready to go.",
   },
   {
     vin: "WVWPR7AU4KW905937",
@@ -164,17 +118,13 @@ const RAW_VEHICLES = [
     trim: "SEL Premium",
     price: 17988,
     mileage: 60999,
-    condition: "Used",
-    location: "San Rafael, CA",
-    bodyStyle: "Hatchback",
-    drivetrain: "FWD",
-    transmission: "Automatic",
-    fuelType: "Electric",
-    color: "White",
-    dealer: DEALERS.coastal,
-    photos: BASE_PHOTOS,
+    location: "Berkeley, CA",
+    dealerName: "Green Line EVs",
+    dealerAddress: "2020 University Ave, Berkeley, CA 94704",
+    dealerPhone: "(510) 555-0660",
+    highlights: ["All-electric", "Navigation", "Heated seats"],
     description:
-      "All-electric e-Golf SEL Premium. No dealer add-on fees advertised.",
+      "Clean EV. Dealer doc fee $395. Market adjustment or protection packages not required.",
   },
   {
     vin: "JTJBARBZ6G2095696",
@@ -184,198 +134,200 @@ const RAW_VEHICLES = [
     trim: "200t",
     price: 19494,
     mileage: 95269,
-    condition: "Used",
-    location: "Bay Area, CA",
-    bodyStyle: "SUV",
-    drivetrain: "AWD",
-    transmission: "Automatic",
-    fuelType: "Gasoline",
-    color: "Black",
-    dealer: DEALERS.marin,
-    photos: BASE_PHOTOS,
+    location: "Walnut Creek, CA",
+    dealerName: "Premium Select Motors",
+    dealerAddress: "1500 N Main St, Walnut Creek, CA 94596",
+    dealerPhone: "(925) 555-0770",
+    highlights: ["Luxury", "AWD"],
     description:
-      "Lexus NX 200t AWD. Dealer lists a $995 appearance package; called out here as an add-on.",
-  },
-  {
-    vin: "4S4BSATC8K3332814",
-    year: 2019,
-    make: "Subaru",
-    model: "Outback",
-    trim: "2.5i Touring",
-    price: 19894,
-    mileage: 80299,
-    condition: "Used",
-    location: "Bay Area, CA",
-    bodyStyle: "Wagon",
-    drivetrain: "AWD",
-    transmission: "CVT",
-    fuelType: "Gasoline",
-    color: "Green",
-    dealer: DEALERS.bay,
-    photos: BASE_PHOTOS,
-    description:
-      "Touring trim with EyeSight. Includes $499 prep fee mentioned in listing.",
-  },
-  {
-    vin: "3GCUKRERXHG418113",
-    year: 2017,
-    make: "Chevrolet",
-    model: "Silverado 1500",
-    trim: "LT",
-    price: 20592,
-    mileage: 144820,
-    condition: "Used",
-    location: "Marin County, CA",
-    bodyStyle: "Truck",
-    drivetrain: "4WD",
-    transmission: "Automatic",
-    fuelType: "Gasoline",
-    color: "Blue",
-    dealer: DEALERS.marin,
-    photos: BASE_PHOTOS,
-    description:
-      "Silverado LT 4x4. Dealer mentions doc fee $85; no big add-ons.",
-  },
-  {
-    vin: "JF2SKARC3LH581099",
-    year: 2020,
-    make: "Subaru",
-    model: "Forester",
-    trim: "Sport",
-    price: 21494,
-    mileage: 73572,
-    condition: "Used",
-    location: "Bay Area, CA",
-    bodyStyle: "SUV",
-    drivetrain: "AWD",
-    transmission: "CVT",
-    fuelType: "Gasoline",
-    color: "Orange",
-    dealer: DEALERS.coastal,
-    photos: BASE_PHOTOS,
-    description:
-      "Forester Sport with panoramic roof. Listing notes a $395 prep fee and $199 processing fee.",
-  },
-  {
-    vin: "KL77LFEP7SC344700",
-    year: 2025,
-    make: "Chevrolet",
-    model: "Trax",
-    trim: "LS",
-    price: 21895,
-    mileage: 15,
-    condition: "New",
-    location: "San Rafael, CA",
-    bodyStyle: "SUV",
-    drivetrain: "FWD",
-    transmission: "Automatic",
-    fuelType: "Gasoline",
-    color: "Summit White",
-    dealer: DEALERS.marin,
-    photos: BASE_PHOTOS,
-    description:
-      "Brand new Trax LS. Straight MSRP, no add-ons in fine print.",
-  },
-  {
-    vin: "2C3CDXHGXMH657079",
-    year: 2021,
-    make: "Dodge",
-    model: "Charger",
-    trim: "GT RWD",
-    price: 22894,
-    mileage: 58717,
-    condition: "Used",
-    location: "Bay Area, CA",
-    bodyStyle: "Sedan",
-    drivetrain: "RWD",
-    transmission: "Automatic",
-    fuelType: "Gasoline",
-    color: "White",
-    dealer: DEALERS.bay,
-    photos: BASE_PHOTOS,
-    description:
-      "Charger GT with Blacktop package. Dealer lists $699 protection package and $199 processing fee.",
+      "Luxury SUV. Dealer processing fee $399 and optional protection package $695.",
   },
 ];
 
-// ---- Fee extraction from dealer description ----
+//
+// Fee analysis
+//
 
-function extractFees(description = "") {
-  const text = description.toLowerCase();
-  const fees = [];
+// Very lightweight keyword/amount parser for demo purposes.
+export function analyzeFees(text) {
+  const src = (text || "").toLowerCase();
+  const pickAmount = (re) => {
+    const m = src.match(re);
+    if (!m) return 0;
+    const num = Number(m[1].replace(/,/g, ""));
+    return Number.isFinite(num) ? num : 0;
+  };
 
-  const patterns = [
-    { label: "Processing fee", regex: /(processing fee[^$]*\$?\s*([\d,]+))/i },
-    { label: "Preparation fee", regex: /(prep(aration)? fee[^$]*\$?\s*([\d,]+))/i },
-    { label: "Reconditioning fee", regex: /(reconditioning fee[^$]*\$?\s*([\d,]+))/i },
-    { label: "Documentation fee", regex: /(doc(umentation)? fee[^$]*\$?\s*([\d,]+))/i },
-    { label: "Protection package", regex: /(protection package[^$]*\$?\s*([\d,]+))/i },
-    { label: "Appearance package", regex: /(appearance package[^$]*\$?\s*([\d,]+))/i },
-  ];
+  // Try to detect specific fees
+  let docFee = pickAmount(/doc(?:ument)?(?:ation)? fee[^$\d]*\$([\d,]+)/);
+  let processingFee = pickAmount(/processing fee[^$\d]*\$([\d,]+)/);
+  let reconFee = pickAmount(/reconditioning fee[^$\d]*\$([\d,]+)/);
 
-  for (const { label, regex } of patterns) {
-    const match = description.match(regex);
-    if (!match) continue;
-    const numRaw = match[2] || match[3] || "";
-    const amount = Number(numRaw.replace(/,/g, ""));
-    if (!Number.isNaN(amount) && amount > 0) {
-      fees.push({ label, amount });
-    }
+  // If mentioned but no explicit number, plug in conservative demo defaults
+  if (!docFee && /doc(?:ument)?(?:ation)? fee/.test(src)) docFee = 85;
+  if (!processingFee && /processing fee/.test(src)) processingFee = 199;
+  if (!reconFee && /reconditioning fee/.test(src)) reconFee = 595;
+
+  // Generic “packages / add-ons” catch
+  let addons = 0;
+  if (/market adjustment|protection package|etch|nitrogen/.test(src)) {
+    addons += 695;
   }
 
-  return fees;
+  // Demo tax + DMV assumptions (can be overridden in computeTotalWithFees opts)
+  const taxRate = 0.095; // 9.5%
+  const dmvFee = 450;
+
+  return {
+    docFee,
+    processingFee,
+    reconFee,
+    addons,
+    taxRate,
+    dmvFee,
+  };
 }
 
-const VEHICLES = RAW_VEHICLES.map((v) => {
-  const fees = extractFees(v.description || "");
-  const feesTotal = fees.reduce((sum, f) => sum + f.amount, 0);
-  return {
-    ...v,
-    fees,
-    totalWithFees: v.price + feesTotal,
-    title: `${v.year} ${v.make} ${v.model}${v.trim ? " " + v.trim : ""}`,
-    keywords: `${v.make} ${v.model} ${v.trim} ${v.vin}`.toLowerCase(),
-  };
-});
+// Compute full out-the-door given price + fees (+ optional shipping)
+export function computeTotalWithFees(price, fees = {}, opts = {}) {
+  const base = Number(price) || 0;
 
-// ---- Public API (frontend only) ----
+  const docFee = Number(fees.docFee || 0);
+  const processingFee = Number(fees.processingFee || 0);
+  const reconFee = Number(fees.reconFee || 0);
+  const addons = Number(fees.addons || 0);
+
+  const shipping = Number(
+    fees.shipping ??
+      opts.shipping ??
+      0
+  );
+
+  const taxRate =
+    typeof fees.taxRate === "number"
+      ? fees.taxRate
+      : typeof opts.taxRate === "number"
+      ? opts.taxRate
+      : 0.095;
+
+  const dmvFee =
+    typeof fees.dmvFee === "number"
+      ? fees.dmvFee
+      : typeof opts.dmvFee === "number"
+      ? opts.dmvFee
+      : 450;
+
+  // For demo: tax applies to vehicle + dealer fees, not shipping
+  const taxable = base + docFee + processingFee + reconFee + addons;
+  const tax = Math.max(0, taxable * taxRate);
+
+  const total =
+    base +
+    docFee +
+    processingFee +
+    reconFee +
+    addons +
+    tax +
+    dmvFee +
+    Math.max(0, shipping);
+
+  return {
+    price: base,
+    docFee,
+    processingFee,
+    reconFee,
+    addons,
+    taxRate,
+    tax,
+    dmvFee,
+    shipping: Math.max(0, shipping),
+    total,
+  };
+}
+
+//
+// Shipping calculator used on VDP + for “Buy Online”
+//
+
+export function calculateShipping(distanceMiles) {
+  const d = Number(distanceMiles);
+  if (!Number.isFinite(d) || d <= 0) return 0;
+  if (d <= 100) return 250;
+  return 250 + (d - 100) * 2;
+}
+
+//
+// Dummy search + fetch helpers
+//
+
+function matchQuery(v, qRaw) {
+  if (!qRaw) return true;
+  const q = qRaw.toLowerCase();
+  const hay = [
+    v.vin,
+    v.year,
+    v.make,
+    v.model,
+    v.trim,
+    v.dealerName,
+    v.location,
+    ...(v.highlights || []),
+    v.description,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return hay.includes(q);
+}
 
 export async function searchVehicles({
   q = "",
   page = 1,
   pagesize = 20,
+  dir = "asc",
 } = {}) {
-  const term = (q || "").toString().trim().toLowerCase();
-  let filtered = VEHICLES;
+  const all = DUMMY_VEHICLES.filter((v) => matchQuery(v, q));
 
-  if (term) {
-    filtered = VEHICLES.filter((v) => v.keywords.includes(term));
-  }
+  const sorted = [...all].sort((a, b) => {
+    if (dir === "desc") return (b.price || 0) - (a.price || 0);
+    return (a.price || 0) - (b.price || 0);
+  });
 
+  const total = sorted.length;
+  const totalPages = Math.max(1, Math.ceil(total / pagesize));
   const start = (page - 1) * pagesize;
-  const results = filtered.slice(start, start + pagesize);
+  const results = sorted.slice(start, start + pagesize);
 
   return {
     ok: true,
-    query: { q: term, page, pagesize },
-    results,
+    query: { q, page, pagesize, dir },
     count: results.length,
-    total: filtered.length,
-    totalPages: Math.max(1, Math.ceil(filtered.length / pagesize)),
+    total,
+    totalPages,
+    results,
   };
 }
 
 export async function getVehicle(vin) {
-  const found = VEHICLES.find(
-    (v) => v.vin.toLowerCase() === String(vin).toLowerCase()
+  const v = DUMMY_VEHICLES.find(
+    (x) => String(x.vin).toLowerCase() === String(vin).toLowerCase()
   );
-  if (!found) throw new Error("Not found");
-  return { ok: true, vehicle: found };
+  if (!v) {
+    return { ok: false, error: "Not found" };
+  }
+  return { ok: true, vehicle: v };
 }
 
-export function calculateShipping(distanceMiles) {
-  const d = Number(distanceMiles || 0);
-  if (!d || d <= 0) return 0;
-  if (d <= 100) return 250;
-  return 250 + (d - 100) * 2;
-}
+//
+// Default export object to preserve existing import style
+//
+const api = {
+  searchVehicles,
+  getVehicle,
+  analyzeFees,
+  computeTotalWithFees,
+  calculateShipping,
+  DUMMY_VEHICLES,
+};
+
+export default api;
