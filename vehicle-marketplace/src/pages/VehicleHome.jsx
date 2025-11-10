@@ -1,802 +1,488 @@
 // vehicle-marketplace/src/pages/VehicleHome.jsx
-import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { getVehicle, calculateShipping } from "../lib/api.js";
-import ContactDealerModal from "../components/ContactDealerModal.jsx";
+import React, { useEffect, useMemo, useState } from "react";
+import { useParams } from "react-router-dom";
+import {
+  getVehicle,
+  analyzeFees,
+  computeTotalWithFees,
+  calculateShipping,
+  getVehicleHistory,
+} from "../lib/api.js";
+import ContactDealerModal from "../components/ContactDealerModal.jsx"; // you already have this
+import PrequalModal from "../components/PrequalModal.jsx"; // simple loan/credit modal
 
-const wrap = {
-  maxWidth: 1120,
-  margin: "24px auto",
-  padding: "0 16px 40px",
-  fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-};
-
-const layout = {
-  display: "grid",
-  gridTemplateColumns: "minmax(0, 3fr) minmax(260px, 1.6fr)",
-  gap: "24px",
-  alignItems: "flex-start",
-};
-
-const gallery = { display: "flex", flexDirection: "column", gap: "8px" };
-
-const mainImg = {
-  width: "100%",
-  borderRadius: "10px",
-  objectFit: "cover",
-  maxHeight: "380px",
-};
-
-const thumbRow = {
-  display: "flex",
-  gap: "6px",
-  overflowX: "auto",
-};
-
-const thumb = (active) => ({
-  width: 70,
-  height: 52,
-  objectFit: "cover",
-  borderRadius: "6px",
-  border: active ? "2px solid #2563eb" : "1px solid #e5e7eb",
-  cursor: "pointer",
-  flexShrink: 0,
-});
-
-const dealerBox = {
-  padding: "14px 16px",
-  borderRadius: "10px",
+const pageWrap = { maxWidth: 1180, margin: "16px auto", padding: "0 16px" };
+const grid = { display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 24 };
+const h1 = { fontSize: 14, fontWeight: 700, margin: "12px 0", letterSpacing: 0.2 };
+const price = { fontSize: 28, fontWeight: 800, margin: 0 };
+const card = {
   border: "1px solid #e5e7eb",
-  marginTop: "10px",
-  background: "#f9fafb",
-  fontSize: "13px",
+  borderRadius: 10,
+  padding: 16,
+  background: "#fff",
 };
 
-const priceBox = {
-  padding: "18px 16px",
-  borderRadius: "12px",
-  border: "1px solid #e5e7eb",
-  boxShadow: "0 4px 18px rgba(15,23,42,0.06)",
-  background: "#ffffff",
-};
-
-const ctas = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "8px",
-  marginTop: "14px",
-};
-
-const primaryBtn = {
-  padding: "11px 10px",
-  borderRadius: "999px",
-  border: "none",
-  background: "#111827",
-  color: "#ffffff",
-  fontWeight: 600,
-  cursor: "pointer",
-  fontSize: "14px",
-  width: "100%",
-};
-
-const ghostBtn = {
-  ...primaryBtn,
-  background: "#ffffff",
-  color: "#111827",
-  border: "1px solid #d1d5db",
-};
-
-const subtle = {
-  fontSize: "11px",
-  color: "#6b7280",
-  marginTop: "4px",
-};
-
-const pill = {
-  display: "inline-block",
-  padding: "4px 9px",
-  borderRadius: "999px",
-  background: "#eff6ff",
-  color: "#1d4ed8",
-  fontSize: "11px",
-  fontWeight: 500,
-  marginRight: "6px",
-};
-
-const feeRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  fontSize: "11px",
-  color: "#4b5563",
-};
-
-const totalRow = {
-  ...feeRow,
-  fontWeight: 600,
-  marginTop: "6px",
-  borderTop: "1px solid #e5e7eb",
-  paddingTop: "6px",
-};
-
-const sectionTitle = {
-  fontSize: "15px",
-  fontWeight: 600,
-  margin: "14px 0 4px",
-};
-
-const bulletList = {
-  margin: "0",
-  paddingLeft: "16px",
-  fontSize: "12px",
-  color: "#4b5563",
-};
-
-// Payment calculator constants (demo)
-const TERMS = [24, 36, 48, 60, 72, 84];
-const DEFAULT_TERM = 72;
-const MIN_LOAN = 5000;
-const APR = 0.075; // 7.5% APR demo
-
-// --- Helper: build out-the-door cost estimate from ZIP (demo logic) ---
-function buildCostBreakdown({ vehicle, zip }) {
-  if (!vehicle || !zip || zip.length < 5) return null;
-
-  const fees = vehicle.fees || [];
-  const feesTotal = fees.reduce((sum, f) => sum + (Number(f.amount) || 0), 0);
-
-  // Use detected doc fee if present; else assume $85 for demo.
-  const docFromFees =
-    fees.find((f) => /doc/i.test(f.label || ""))?.amount ?? null;
-  const docFee = Number(docFromFees) || 85;
-
-  const baseWithFees = vehicle.price + feesTotal;
-
-  // Very rough demo tax logic:
-  const taxRate = zip.startsWith("9") ? 0.09 : 0.07;
-  const tax = Math.round(baseWithFees * taxRate);
-
-  // Simple flat DMV estimate for demo.
-  const dmv = baseWithFees > 20000 ? 420 : 320;
-
-  const total = baseWithFees + tax + dmv + docFee;
-
-  return {
-    zip,
-    taxRate,
-    baseWithFees,
-    docFee,
-    tax,
-    dmv,
-    total,
-  };
+function formatMoney(v) {
+  if (v == null || Number.isNaN(Number(v))) return "--";
+  return Number(v).toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
 }
 
-// --- Helper: monthly payment from principal / term ---
-function calcMonthly(principal, termMonths, apr = APR) {
-  if (!principal || principal <= 0 || !termMonths) return 0;
+function calcDefaultDown(total) {
+  if (!total || total <= 0) return 0;
+  let down = Math.ceil((total * 0.1) / 1000) * 1000;
+  if (total - down < 5000) down = Math.max(0, total - 5000);
+  return down;
+}
+
+function calcMonthly(total, down, termMonths, apr = 0.075) {
+  if (!total || termMonths <= 0) return null;
+  const loan = Math.max(total - (down || 0), 0);
+  if (loan <= 0) return 0;
   const r = apr / 12;
-  if (r === 0) return principal / termMonths;
-  const m = principal * (r / (1 - Math.pow(1 + r, -termMonths)));
-  return m;
+  const pow = Math.pow(1 + r, termMonths);
+  return (loan * r * pow) / (pow - 1);
 }
 
 export default function VehicleHome() {
   const { vin } = useParams();
-  const navigate = useNavigate();
 
   const [vehicle, setVehicle] = useState(null);
-  const [photoIndex, setPhotoIndex] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
-
-  const [contactOpen, setContactOpen] = useState(false);
-
-  const [miles, setMiles] = useState("");
-  const [shipping, setShipping] = useState(0);
-
+  const [fees, setFees] = useState(null);
   const [zip, setZip] = useState("");
-  const [breakdown, setBreakdown] = useState(null);
-  const [autoLocated, setAutoLocated] = useState(false);
+  const [distance, setDistance] = useState(""); // miles for shipping
+  const [history, setHistory] = useState(null);
 
-  const [term, setTerm] = useState(DEFAULT_TERM);
-  const [downPayment, setDownPayment] = useState(0);
-  const [monthly, setMonthly] = useState(0);
+  const [showContact, setShowContact] = useState(false);
+  const [showPrequal, setShowPrequal] = useState(false);
 
-  // Load vehicle
+  const [term, setTerm] = useState(72);
+  const [down, setDown] = useState(0);
+
+  const [histTab, setHistTab] = useState("ALL");
+
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setErr("");
-    getVehicle(vin)
-      .then((res) => {
-        if (cancelled) return;
-        setVehicle(res.vehicle);
-        setPhotoIndex(0);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setErr(e.message || "Vehicle not found");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    (async () => {
+      const v = await getVehicle(vin);
+      if (v.ok && v.vehicle) {
+        setVehicle(v.vehicle);
+        const parsed = analyzeFees(v.vehicle.description || "");
+        setFees(parsed);
+      }
+      const hv = await getVehicleHistory(vin);
+      if (hv.ok) setHistory(hv.history);
+    })();
   }, [vin]);
 
-  // Auto-attempt location once (demo behavior)
+  const shipping = useMemo(() => calculateShipping(distance), [distance]);
+
+  const totals = useMemo(() => {
+    const p = Number(vehicle?.price || 0);
+    return computeTotalWithFees(p, { ...(fees || {}), shipping });
+  }, [vehicle, fees, shipping]);
+
   useEffect(() => {
-    if (autoLocated || zip) return;
-    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    setDown(calcDefaultDown(totals?.total || 0));
+  }, [totals?.total]);
 
-    navigator.geolocation.getCurrentPosition(
-      () => {
-        // For demo, assume local ZIP; no external geocoding.
-        setZip("94103");
-        setAutoLocated(true);
-      },
-      () => {
-        // ignore errors silently
-      },
-      { timeout: 2000 }
-    );
-  }, [autoLocated, zip]);
+  const monthly = useMemo(() => {
+    return calcMonthly(totals?.total || 0, down, term);
+  }, [totals?.total, down, term]);
 
-  // Recompute breakdown when zip or vehicle changes
-  useEffect(() => {
-    if (!vehicle) return;
-    const next = buildCostBreakdown({ vehicle, zip });
-    setBreakdown(next);
-  }, [zip, vehicle]);
-
-  // When miles input changes, recalc shipping
-  const onMilesChange = (e) => {
-    const value = e.target.value.replace(/[^\d]/g, "");
-    setMiles(value);
-    const dist = Number(value || 0);
-    setShipping(calculateShipping(dist));
-  };
-
-  // Effective totals
-  const baseTotal =
-    breakdown?.total ??
-    vehicle?.totalWithFees ??
-    vehicle?.price ??
-    0;
-
-  const effectiveTotal = baseTotal + (shipping > 0 ? shipping : 0);
-
-  // Compute default down payment + monthly whenever total or term changes
-  useEffect(() => {
-    if (!effectiveTotal || effectiveTotal <= 0) return;
-
-    // Suggested = 10% of total, rounded up to nearest 1,000
-    let suggested =
-      Math.ceil((effectiveTotal * 0.1) / 1000) * 1000;
-
-    // Ensure loan >= MIN_LOAN
-    const maxAllowedDown = Math.max(
-      0,
-      effectiveTotal - MIN_LOAN
-    );
-    if (suggested > maxAllowedDown) {
-      suggested = maxAllowedDown;
-    }
-    if (suggested < 0) suggested = 0;
-
-    // If current downPayment is 0 (initial) or out of range, reset to suggested
-    setDownPayment((prev) => {
-      if (prev <= 0 || prev > maxAllowedDown) return suggested;
-      return prev;
-    });
-  }, [effectiveTotal]);
-
-  // Recalculate monthly whenever inputs change
-  useEffect(() => {
-    if (!effectiveTotal || effectiveTotal <= 0) {
-      setMonthly(0);
-      return;
-    }
-
-    const maxAllowedDown = Math.max(
-      0,
-      effectiveTotal - MIN_LOAN
-    );
-
-    let dp = Number(downPayment) || 0;
-    if (dp < 0) dp = 0;
-    if (dp > maxAllowedDown) dp = maxAllowedDown;
-
-    if (dp !== downPayment) {
-      setDownPayment(dp);
-      return; // next effect run will compute with clamped value
-    }
-
-    const principal = effectiveTotal - dp;
-    if (principal < MIN_LOAN) {
-      setMonthly(0);
-      return;
-    }
-
-    const t = TERMS.includes(Number(term))
-      ? Number(term)
-      : DEFAULT_TERM;
-    if (t !== term) {
-      setTerm(t);
-      return;
-    }
-
-    const m = calcMonthly(principal, t, APR);
-    setMonthly(Math.round(m));
-  }, [effectiveTotal, downPayment, term]);
-
-  const onGetApproved = () => {
-    if (!vehicle) return;
-    navigate("/apply", { state: { vin: vehicle.vin, vehicle } });
-  };
-
-  const onBuyOnline = () => {
-    const input = document.getElementById("shipping-miles-input");
-    if (input) {
-      input.scrollIntoView({ behavior: "smooth", block: "center" });
-      input.focus();
-    }
-  };
-
-  if (loading) {
+  if (!vehicle) {
     return (
-      <div style={wrap}>
-        <p>Loading vehicle...</p>
+      <div style={pageWrap}>
+        <p>Loading…</p>
       </div>
     );
   }
 
-  if (err || !vehicle) {
-    return (
-      <div style={wrap}>
-        <p style={{ color: "crimson" }}>{err || "Vehicle not found."}</p>
-      </div>
-    );
-  }
-
-  const photos =
-    vehicle.photos && vehicle.photos.length
-      ? vehicle.photos
-      : [
-          "https://images.pexels.com/photos/210019/pexels-photo-210019.jpeg?auto=compress&w=900",
-        ];
-
-  const fees = vehicle.fees || [];
-  const totalWithFees =
-    vehicle.totalWithFees || vehicle.price;
+  const photos = vehicle.photos && vehicle.photos.length ? vehicle.photos : [
+    "https://images.pexels.com/photos/210019/pexels-photo-210019.jpeg?auto=compress&w=1200",
+  ];
 
   return (
-    <div style={wrap}>
-      <div style={{ marginBottom: "10px", fontSize: "11px", color: "#6b7280" }}>
-        {vehicle.year} {vehicle.make} {vehicle.model}
-        {vehicle.trim ? ` ${vehicle.trim}` : ""} • VIN {vehicle.vin}
+    <div style={pageWrap}>
+      <div style={{ marginBottom: 8 }}>
+        <a href="/" style={{ fontSize: 12, color: "#2563eb", textDecoration: "none" }}>
+          Vehicle Marketplace
+        </a>
+        {"  "}
+        <a href="/search" style={{ fontSize: 12, color: "#2563eb", textDecoration: "none", marginLeft: 10 }}>
+          Search
+        </a>
       </div>
 
-      <div style={layout}>
-        {/* LEFT: MEDIA + DETAILS */}
+      <div style={grid}>
+        {/* LEFT: Gallery + details */}
         <div>
-          <div style={gallery}>
+          {/* Hero photo */}
+          <div
+            style={{
+              ...card,
+              padding: 0,
+              overflow: "hidden",
+            }}
+          >
             <img
-              src={
-                photos[
-                  Math.max(
-                    0,
-                    Math.min(photoIndex, photos.length - 1)
-                  )
-                ]
-              }
+              src={photos[0]}
               alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
-              style={mainImg}
+              style={{ width: "100%", height: 380, objectFit: "cover" }}
             />
             {photos.length > 1 && (
-              <div style={thumbRow}>
-                {photos.map((src, idx) => (
-                  <img
-                    key={idx}
-                    src={src}
-                    alt=""
-                    style={thumb(idx === photoIndex)}
-                    onClick={() => setPhotoIndex(idx)}
+              <div style={{ display: "flex", gap: 8, padding: 8 }}>
+                {photos.slice(1, 4).map((p, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      width: 96,
+                      height: 60,
+                      borderRadius: 8,
+                      background: `url('${p}') center/cover no-repeat`,
+                      border: "1px solid #eee",
+                    }}
                   />
                 ))}
               </div>
             )}
           </div>
 
-          <div style={dealerBox}>
-            <div style={{ fontSize: "12px", color: "#6b7280" }}>
-              Selling dealer
-            </div>
-            <div style={{ fontSize: "15px", fontWeight: 600 }}>
-              {vehicle.dealer?.name || "Partner Dealer"}
-            </div>
-            <div>
-              {vehicle.dealer?.address && (
-                <>
-                  {vehicle.dealer.address}
-                  <br />
-                </>
-              )}
-              {(vehicle.dealer?.city ||
-                vehicle.dealer?.state ||
-                vehicle.dealer?.zip) && (
-                <>
-                  {vehicle.dealer?.city}, {vehicle.dealer?.state}{" "}
-                  {vehicle.dealer?.zip}
-                  <br />
-                </>
-              )}
-              {vehicle.dealer?.phone && <span>{vehicle.dealer.phone}</span>}
-            </div>
+          {/* Dealer block */}
+          <div style={{ ...card, marginTop: 12 }}>
+            <div style={{ fontWeight: 700, marginBottom: 2 }}>{vehicle.dealerName}</div>
+            <div style={{ fontSize: 13, color: "#6b7280" }}>{vehicle.dealerAddress}</div>
+            {vehicle.dealerPhone && (
+              <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>{vehicle.dealerPhone}</div>
+            )}
           </div>
 
-          <div style={{ marginTop: "18px" }}>
-            <div style={sectionTitle}>Highlights</div>
-            <ul style={bulletList}>
-              <li>
-                {vehicle.year} {vehicle.make} {vehicle.model}
-                {vehicle.trim ? ` ${vehicle.trim}` : ""} •{" "}
-                {vehicle.mileage?.toLocaleString()} miles •{" "}
-                {vehicle.condition}
-              </li>
-              {vehicle.bodyStyle && <li>{vehicle.bodyStyle}</li>}
-              {vehicle.drivetrain && <li>{vehicle.drivetrain}</li>}
-              {vehicle.transmission && <li>{vehicle.transmission}</li>}
-              {vehicle.fuelType && <li>{vehicle.fuelType}</li>}
-              {vehicle.color && <li>Exterior: {vehicle.color}</li>}
+          {/* Highlights */}
+          <div style={{ ...card, marginTop: 12 }}>
+            <div style={h1}>Highlights</div>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
+              {(vehicle.highlights || []).map((h, i) => (
+                <li key={i}>{h}</li>
+              ))}
             </ul>
+          </div>
 
-            <div style={sectionTitle}>Vehicle description</div>
-            <p
-              style={{
-                fontSize: "12px",
-                color: "#4b5563",
-                lineHeight: 1.6,
-                whiteSpace: "pre-line",
-              }}
-            >
-              {vehicle.description ||
-                "Dealer-supplied description coming soon."}
-            </p>
+          {/* Description */}
+          <div style={{ ...card, marginTop: 12 }}>
+            <div style={h1}>Vehicle description</div>
+            <div style={{ fontSize: 14, lineHeight: 1.5 }}>{vehicle.description}</div>
+          </div>
+
+          {/* CARFAX HISTORY */}
+          <div style={{ ...card, marginTop: 12 }}>
+            <div style={{ ...h1, fontSize: 16 }}>CARFAX HISTORY</div>
+
+            {/* Ribbon */}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+              {["ALL", "OWNERS", "MAINTENANCE", "EVENTS", "SMOG", "INSPECTION"].map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setHistTab(tab)}
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: 999,
+                    border: "1px solid #d1d5db",
+                    background: histTab === tab ? "#111827" : "#fff",
+                    color: histTab === tab ? "#fff" : "#111827",
+                    fontSize: 12,
+                    cursor: "pointer",
+                  }}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            {/* Content */}
+            {!history ? (
+              <div style={{ fontSize: 13, color: "#6b7280" }}>Loading history…</div>
+            ) : (
+              <HistoryPanel tab={histTab} history={history} />
+            )}
+
+            <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 10 }}>
+              Data provided by CARFAX® via API. For demo, this is sample content. Actual records vary by VIN.
+            </div>
           </div>
         </div>
 
-        {/* RIGHT: PRICE + CTAS */}
-        <aside style={priceBox}>
-          {/* Base price */}
-          <div style={{ fontSize: "11px", color: "#6b7280" }}>
-            Advertised price
-          </div>
-          <div style={{ fontSize: "26px", fontWeight: 700 }}>
-            ${vehicle.price.toLocaleString()}
-          </div>
-          <div style={subtle}>
-            Price set by dealer. Taxes, DMV fees, and government charges not
-            included.
-          </div>
-
-          {/* ZIP input */}
-          <div style={{ marginTop: "8px" }}>
-            <div
-              style={{
-                fontSize: "11px",
-                color: "#4b5563",
-                marginBottom: 3,
-              }}
-            >
-              Enter your ZIP to estimate total cost
+        {/* RIGHT: Price/fees/shipping/payment */}
+        <div>
+          <div style={card}>
+            <div style={{ fontSize: 12, color: "#6b7280" }}>Advertised price</div>
+            <h2 style={price}>{formatMoney(vehicle.price)}</h2>
+            <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 8 }}>
+              Price set by dealer. Taxes, DMV fees, and government charges not included.
             </div>
-            <input
-              value={zip}
-              onChange={(e) =>
-                setZip(
-                  e.target.value.replace(/[^\d]/g, "").slice(0, 5)
-                )
-              }
-              placeholder="e.g. 94103"
-              maxLength={5}
-              style={{
-                width: "100%",
-                padding: "7px 9px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                fontSize: 12,
-              }}
-            />
-            {autoLocated && (
-              <div style={{ ...subtle, fontSize: 10 }}>
-                Using your device location (demo) to pre-fill ZIP.
-              </div>
-            )}
-          </div>
 
-          {/* Dealer add-ons */}
-          {fees.length > 0 && (
-            <div style={{ marginTop: "10px" }}>
-              <div style={sectionTitle}>Detected dealer add-ons</div>
-              {fees.map((f, i) => (
-                <div key={i} style={feeRow}>
-                  <span>{f.label}</span>
-                  <span>+${Number(f.amount).toLocaleString()}</span>
-                </div>
-              ))}
-              <div style={totalRow}>
-                <span>Price with dealer add-ons</span>
-                <span>${totalWithFees.toLocaleString()}</span>
-              </div>
-              <div style={subtle}>
-                Based on listing text. You can remove unwanted add-ons during
-                deal review.
-              </div>
-            </div>
-          )}
-
-          {/* Out-the-door breakdown (no shipping yet) */}
-          {breakdown && (
-            <div style={{ marginTop: "12px" }}>
-              <div style={sectionTitle}>Estimated out-the-door</div>
-              <div style={feeRow}>
-                <span>
-                  Vehicle price + add-ons
-                  <span style={{ color: "#9ca3af" }}>
-                    {" "}
-                    (ZIP {breakdown.zip})
-                  </span>
-                </span>
-                <span>${breakdown.baseWithFees.toLocaleString()}</span>
-              </div>
-              <div style={feeRow}>
-                <span>
-                  Taxes (~{Math.round(breakdown.taxRate * 100)}%)
-                </span>
-                <span>${breakdown.tax.toLocaleString()}</span>
-              </div>
-              <div style={feeRow}>
-                <span>DMV fees (est.)</span>
-                <span>${breakdown.dmv.toLocaleString()}</span>
-              </div>
-              <div style={feeRow}>
-                <span>Dealer documentation fee</span>
-                <span>${breakdown.docFee.toLocaleString()}</span>
-              </div>
-              <div style={totalRow}>
-                <span>Estimated total (no shipping)</span>
-                <span>${breakdown.total.toLocaleString()}</span>
-              </div>
-              <div style={{ ...subtle, marginTop: 2 }}>
-                Demo estimate only. Actual tax/DMV/doc fees depend on your
-                registration address and dealer terms.
-              </div>
-            </div>
-          )}
-
-          {/* Shipping estimator */}
-          <div id="shipping-section" style={{ marginTop: "16px" }}>
-            <div style={sectionTitle}>Estimate shipping</div>
-            <div
-              style={{
-                fontSize: "11px",
-                color: "#6b7280",
-                marginBottom: 4,
-              }}
-            >
-              $250 flat within 100 miles, then $2 per mile after that.
-            </div>
-            <div style={{ display: "flex", gap: 6 }}>
+            {/* ZIP for taxes/fees preview (kept simple for demo) */}
+            <div style={{ margin: "8px 0 10px" }}>
+              <label style={{ fontSize: 12, color: "#6b7280", display: "block", marginBottom: 4 }}>
+                Enter your ZIP to estimate total cost
+              </label>
               <input
-                id="shipping-miles-input"
-                type="text"
-                inputMode="numeric"
-                value={miles}
-                onChange={onMilesChange}
-                placeholder="Distance in miles"
-                style={{
-                  flex: 1,
-                  padding: "7px 9px",
-                  borderRadius: "8px",
-                  border: "1px solid #d1d5db",
-                  fontSize: "12px",
-                }}
+                value={zip}
+                onChange={(e) => setZip(e.target.value)}
+                placeholder="e.g. 94939"
+                style={{ width: "100%", padding: "8px 10px", border: "1px solid #d1d5db", borderRadius: 6 }}
               />
             </div>
-            <div
-              style={{
-                marginTop: 6,
-                fontSize: "12px",
-                color: "#111827",
-              }}
-            >
-              Shipping:{" "}
-              <strong>
-                {shipping > 0
-                  ? `$${shipping.toLocaleString()}`
-                  : "--"}
-              </strong>
-            </div>
-            {shipping > 0 && (
-              <div style={{ fontSize: "11px", color: "#6b7280" }}>
-                Shipping is included in the total estimate below.
-              </div>
-            )}
-          </div>
 
-          {/* Combined total incl. shipping (if any) */}
-          {effectiveTotal > 0 && (
-            <div style={{ marginTop: "14px" }}>
-              <div style={sectionTitle}>
-                Estimated total with shipping
+            {/* Detected fees */}
+            <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>Detected dealer add-ons</div>
+            <ul style={{ listStyle: "none", padding: 0, margin: "0 0 8px 0", fontSize: 12 }}>
+              <LineItem label="Processing fee" value={fees?.processingFee} />
+              <LineItem label="Reconditioning fee" value={fees?.reconFee} />
+              {fees?.docFee ? <LineItem label="Dealer documentation fee" value={fees?.docFee} /> : null}
+              {fees?.addons ? <LineItem label="Other add-ons" value={fees?.addons} /> : null}
+            </ul>
+
+            {/* Shipping input */}
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Estimate shipping</div>
+              <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 6 }}>
+                $250 flat within 100 miles, then $2 per mile after that.
               </div>
-              <div style={totalRow}>
-                <span>Total (vehicle, fees, est. tax/DMV/doc, shipping)</span>
-                <span>${effectiveTotal.toLocaleString()}</span>
+              <input
+                value={distance}
+                onChange={(e) => setDistance(e.target.value)}
+                placeholder="Distance in miles"
+                style={{ width: "100%", padding: "8px 10px", border: "1px solid #d1d5db", borderRadius: 6 }}
+              />
+              <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
+                Shipping: {shipping ? formatMoney(shipping) : "--"}
               </div>
             </div>
-          )}
 
-          {/* Monthly payment calculator */}
-          {effectiveTotal > 0 && (
-            <div style={{ marginTop: "14px" }}>
-              <div style={sectionTitle}>
-                <span role="img" aria-label="calculator">
-                  🧮
-                </span>{" "}
-                Estimate monthly payment
+            {/* Totals */}
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Estimated out-the-door</div>
+              <ul style={{ listStyle: "none", padding: 0, margin: 0, fontSize: 12 }}>
+                <LineItem label="Vehicle price" value={totals?.price} />
+                <LineItem label="Taxes (est.)" value={totals?.tax} />
+                <LineItem label="DMV (est.)" value={totals?.dmvFee} />
+                <LineItem label="Dealer fees (est.)" value={(totals?.docFee || 0) + (totals?.processingFee || 0) + (totals?.reconFee || 0) + (totals?.addons || 0)} />
+                <LineItem label="Shipping (est.)" value={totals?.shipping} />
+              </ul>
+              <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <div style={{ fontSize: 13, color: "#6b7280" }}>Estimated total with shipping</div>
+                <div style={{ fontWeight: 800, fontSize: 18 }}>{formatMoney(totals?.total)}</div>
+              </div>
+            </div>
+
+            {/* Monthly payment */}
+            <div style={{ marginTop: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                <span role="img" aria-label="calculator">🧮</span>
+                <div style={{ fontWeight: 700 }}>Estimated monthly payment</div>
               </div>
 
-              {/* Down payment */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  marginTop: 4,
-                  fontSize: 11,
-                }}
-              >
-                <span style={{ width: 78 }}>Down payment</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={
-                    downPayment
-                      ? downPayment.toLocaleString()
-                      : ""
-                  }
-                  onChange={(e) => {
-                    const raw = e.target.value
-                      .replace(/[^\d]/g, "");
-                    const num = Number(raw || 0);
-                    setDownPayment(num);
-                  }}
-                  placeholder="e.g. 3,000"
-                  style={{
-                    flex: 1,
-                    padding: "6px 8px",
-                    borderRadius: 8,
-                    border: "1px solid #d1d5db",
-                    fontSize: 11,
-                  }}
-                />
-              </div>
-
-              {/* Term selector */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  marginTop: 6,
-                  fontSize: 11,
-                }}
-              >
-                <span style={{ width: 78 }}>Term</span>
-                <select
-                  value={term}
-                  onChange={(e) =>
-                    setTerm(Number(e.target.value))
-                  }
-                  style={{
-                    flex: 1,
-                    padding: "6px 8px",
-                    borderRadius: 8,
-                    border: "1px solid #d1d5db",
-                    fontSize: 11,
-                  }}
-                >
-                  {TERMS.map((t) => (
-                    <option key={t} value={t}>
-                      {t} months
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Monthly result */}
-              <div style={{ marginTop: 8 }}>
-                {monthly > 0 ? (
-                  <div
-                    style={{
-                      fontSize: 14,
-                      fontWeight: 600,
-                      color: "#111827",
-                    }}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div>
+                  <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Down payment</div>
+                  <input
+                    value={down}
+                    onChange={(e) => setDown(Math.max(0, Number(e.target.value) || 0))}
+                    style={{ width: "100%", padding: "8px 10px", border: "1px solid #d1d5db", borderRadius: 6 }}
+                  />
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Term</div>
+                  <select
+                    value={term}
+                    onChange={(e) => setTerm(Number(e.target.value))}
+                    style={{ width: "100%", padding: "8px 10px", border: "1px solid #d1d5db", borderRadius: 6 }}
                   >
-                    Approx.{" "}
-                    <span>
-                      ${monthly.toLocaleString()}
-                    </span>{" "}
-                    / month
-                  </div>
-                ) : (
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "#6b7280",
-                    }}
-                  >
-                    Adjust down payment and term to keep loan
-                    amount at least ${MIN_LOAN.toLocaleString()}.
-                  </div>
-                )}
-                <div
-                  style={{
-                    ...subtle,
-                    fontSize: 9,
-                    marginTop: 2,
-                  }}
-                >
-                  For illustration only. Assumes {(
-                    APR * 100
-                  ).toFixed(1)}
-                  % APR, simple interest, and average
-                  credit. Actual terms from lenders may
-                  differ.
+                    {[24, 36, 48, 60, 72, 84].map((m) => (
+                      <option key={m} value={m}>
+                        {m} months
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
+                Approx. <b>{formatMoney(monthly)}</b> / month
+                <div style={{ fontSize: 11 }}>
+                  For illustration only, assumes 7.5% APR, simple interest, and average credit. Actual terms from lenders may differ.
                 </div>
               </div>
             </div>
-          )}
 
-          <div style={{ marginTop: "14px" }}>
-            <span style={pill}>Transparent fees</span>
-            <span style={pill}>Online ready</span>
-            <span style={pill}>Ship to your door</span>
+            {/* CTAs */}
+            <div style={{ marginTop: 16, display: "grid", gap: 8 }}>
+              <button
+                onClick={() => setShowContact(true)}
+                style={ctaPrimary}
+              >
+                CONTACT DEALER
+              </button>
+              <button
+                onClick={() => setShowPrequal(true)}
+                style={ctaOutline}
+              >
+                GET APPROVED
+              </button>
+              <button
+                onClick={() => alert("Buy Online (estimate) — demo only")}
+                style={ctaOutline}
+              >
+                BUY ONLINE (ESTIMATE)
+              </button>
+              <div style={{ fontSize: 11, color: "#94a3b8" }}>
+                This is a demo marketplace using sample data for illustration only.
+              </div>
+            </div>
           </div>
-
-          <div style={ctas}>
-            <button
-              style={primaryBtn}
-              onClick={() => setContactOpen(true)}
-            >
-              CONTACT DEALER
-            </button>
-            <button style={ghostBtn} onClick={onGetApproved}>
-              GET APPROVED
-            </button>
-            <button style={ghostBtn} onClick={onBuyOnline}>
-              BUY ONLINE (ESTIMATE)
-            </button>
-          </div>
-
-          <div style={subtle}>
-            This is a demo marketplace using sample data for
-            illustration only.
-          </div>
-        </aside>
+        </div>
       </div>
 
-      {contactOpen && (
+      {/* Modals */}
+      {showContact && (
         <ContactDealerModal
-          vehicle={vehicle}
-          dealer={vehicle.dealer}
-          onClose={() => setContactOpen(false)}
+          onClose={() => setShowContact(false)}
+          dealer={{
+            name: vehicle.dealerName,
+            phone: vehicle.dealerPhone,
+            address: vehicle.dealerAddress,
+          }}
+          vehicle={{
+            vin: vehicle.vin,
+            title: `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.trim ? " " + vehicle.trim : ""}`,
+          }}
         />
       )}
+      {showPrequal && <PrequalModal onClose={() => setShowPrequal(false)} />}
     </div>
   );
 }
+
+function LineItem({ label, value }) {
+  return (
+    <li style={{ display: "flex", justifyContent: "space-between", margin: "3px 0" }}>
+      <span style={{ color: "#6b7280" }}>{label}</span>
+      <span style={{ fontWeight: 600 }}>{value != null ? formatMoney(value) : "--"}</span>
+    </li>
+  );
+}
+
+function HistoryPanel({ tab, history }) {
+  const pill = {
+    display: "inline-block",
+    padding: "6px 10px",
+    borderRadius: 999,
+    background: "#f3f4f6",
+    marginRight: 8,
+    fontSize: 12,
+  };
+
+  if (tab === "OWNERS") {
+    return (
+      <div>
+        <div style={pill}>Owners: <b>{history.owners}</b></div>
+        <p style={{ fontSize: 13, color: "#374151", marginTop: 8 }}>
+          Number of prior owners (from CARFAX). Ownership history may affect warranty eligibility and service schedules.
+        </p>
+      </div>
+    );
+  }
+  if (tab === "MAINTENANCE") {
+    return (
+      <div>
+        <div style={pill}>Maintenance records: <b>{history.maintenance}</b></div>
+        <ul style={{ marginTop: 8 }}>
+          {history.all.filter((x) => x.type === "MAINTENANCE").map((e, i) => (
+            <li key={i} style={{ fontSize: 13 }}>{e.date} — {e.text}</li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+  if (tab === "EVENTS") {
+    return (
+      <div>
+        <div style={pill}>Events: <b>{history.events}</b></div>
+        {history.events === 0 ? (
+          <p style={{ fontSize: 13, marginTop: 8 }}>No incidents reported.</p>
+        ) : (
+          <ul style={{ marginTop: 8 }}>
+            {history.all.filter((x) => x.type === "EVENT").map((e, i) => (
+              <li key={i} style={{ fontSize: 13 }}>{e.date} — {e.text}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
+  if (tab === "SMOG") {
+    return (
+      <div>
+        <div style={pill}>Smog: <b>{history.smog}</b></div>
+        <ul style={{ marginTop: 8 }}>
+          {history.all.filter((x) => x.type === "SMOG").map((e, i) => (
+            <li key={i} style={{ fontSize: 13 }}>{e.date} — {e.text}</li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+  if (tab === "INSPECTION") {
+    return (
+      <div>
+        <div style={pill}>Inspection status: <b>{history.inspection}</b></div>
+        <ul style={{ marginTop: 8 }}>
+          {history.all.filter((x) => x.type === "INSPECTION").map((e, i) => (
+            <li key={i} style={{ fontSize: 13 }}>{e.date} — {e.text}</li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+  // ALL
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div style={pill}>Owners: <b>{history.owners}</b></div>
+        <div style={pill}>Maintenance: <b>{history.maintenance}</b></div>
+        <div style={pill}>Events: <b>{history.events}</b></div>
+        <div style={pill}>Smog: <b>{history.smog}</b></div>
+        <div style={pill}>Inspection: <b>{history.inspection}</b></div>
+      </div>
+      <ul style={{ marginTop: 10 }}>
+        {history.all.map((e, i) => (
+          <li key={i} style={{ fontSize: 13 }}>
+            <b>{e.type}</b> — {e.date}: {e.text}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+const ctaPrimary = {
+  padding: "12px 14px",
+  borderRadius: 999,
+  background: "#111827",
+  color: "#fff",
+  border: "none",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const ctaOutline = {
+  padding: "12px 14px",
+  borderRadius: 999,
+  background: "#fff",
+  color: "#111827",
+  border: "1px solid #d1d5db",
+  cursor: "pointer",
+  fontWeight: 700,
+};
