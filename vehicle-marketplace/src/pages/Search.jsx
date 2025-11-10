@@ -1,20 +1,11 @@
-// src/pages/Search.jsx
+// vehicle-marketplace/src/pages/Search.jsx
 import React, { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { searchVehicles, analyzeFees, computeTotalWithFees } from "../lib/api.js";
+import { searchVehicles } from "../lib/api.js";
 
 const wrap = { maxWidth: 960, margin: "24px auto", padding: "0 16px" };
-const h1 = { fontSize: 22, fontWeight: 600, marginBottom: 16 };
+const h1 = { fontSize: "22px", fontWeight: 600, marginBottom: 12 };
 const err = { color: "crimson", marginTop: 12 };
-const list = { marginTop: 16, display: "flex", flexDirection: "column", gap: 12 };
-const card = {
-  display: "flex",
-  gap: 16,
-  padding: 12,
-  borderRadius: 8,
-  border: "1px solid #e5e7eb",
-  alignItems: "center",
-};
 
 export default function Search() {
   const [params, setParams] = useSearchParams();
@@ -27,7 +18,8 @@ export default function Search() {
 
   useEffect(() => {
     const run = async () => {
-      if (!params.get("q")) {
+      const query = params.get("q") || "";
+      if (!query.trim()) {
         setResults([]);
         setError("");
         return;
@@ -35,14 +27,14 @@ export default function Search() {
       setLoading(true);
       setError("");
       try {
-        const res = await searchVehicles({
-          q: params.get("q") || "",
+        const data = await searchVehicles({
+          q: query,
           page,
-          pagesize: 20,
+          pagesize: 50,
         });
-        setResults(res.results || []);
+        setResults(Array.isArray(data.results) ? data.results : []);
       } catch (e) {
-        setError(e.message || String(e));
+        setError(`Search failed: ${e.message || e}`);
         setResults([]);
       } finally {
         setLoading(false);
@@ -69,118 +61,38 @@ export default function Search() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search by make, model, VIN…"
-          style={{
-            flex: 1,
-            padding: "9px 10px",
-            borderRadius: 6,
-            border: "1px solid #d1d5db",
-          }}
+          style={{ flex: 1, padding: "8px 10px", borderRadius: 6, border: "1px solid #d1d5db" }}
         />
-        <button
-          type="submit"
-          style={{
-            padding: "9px 16px",
-            borderRadius: 6,
-            border: "none",
-            background: "#111827",
-            color: "#fff",
-            cursor: "pointer",
-          }}
-        >
+        <button type="submit" style={{ padding: "8px 14px", borderRadius: 6 }}>
           Search
         </button>
       </form>
 
       <p style={{ color: "#6b7280", fontSize: 12, marginTop: 8 }}>
-        Try: <em>Mazda, CX-5, e-Golf…</em>
+        Try: <em>Mazda, Chevrolet, Subaru, Charger</em>
       </p>
 
       {loading && <p>Loading…</p>}
       {error && <p style={err}>Error: {error}</p>}
 
-      {!loading && !error && (
-        <div style={list}>
-          {results.length === 0 && params.get("q") && <p>No results.</p>}
-          {results.map((v) => {
-            const fees = analyzeFees(v.description);
-            const total = computeTotalWithFees(v.price, fees) || v.price;
-            return (
+      {!loading && !error && params.get("q") && (
+        <ul style={{ marginTop: 16, listStyle: "none", padding: 0 }}>
+          {results.length === 0 && <p>No results.</p>}
+          {results.map((r) => (
+            <li key={r.vin} style={{ marginBottom: 14, paddingBottom: 10, borderBottom: "1px solid #f3f4f6" }}>
               <Link
-                key={v.vin}
-                to={`/vehicles/${v.vin}`}
-                style={{ textDecoration: "none", color: "inherit" }}
+                to={`/vehicles/${r.vin}`}
+                style={{ fontWeight: 600, textDecoration: "none", color: "#111827" }}
               >
-                <div style={card}>
-                  <div
-                    style={{
-                      width: 140,
-                      height: 90,
-                      backgroundColor: "#f3f4f6",
-                      borderRadius: 6,
-                      overflow: "hidden",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {v.images?.[0] && (
-                      <img
-                        src={v.images[0]}
-                        alt={v.title || `${v.year} ${v.make} ${v.model}`}
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                          display: "block",
-                        }}
-                      />
-                    )}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600 }}>
-                      {v.year} {v.make} {v.model}
-                      {v.trim ? ` ${v.trim}` : ""}
-                    </div>
-                    <div style={{ fontSize: 12, color: "#6b7280" }}>
-                      VIN: {v.vin} •{" "}
-                      {v.mileage != null
-                        ? `${Number(v.mileage).toLocaleString()} mi`
-                        : "Mileage N/A"}{" "}
-                      • {v.location}
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 4,
-                        fontSize: 13,
-                        color: "#4b5563",
-                      }}
-                    >
-                      {v.dealer?.name}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div
-                      style={{
-                        fontWeight: 700,
-                        fontSize: 18,
-                        color: "#111827",
-                      }}
-                    >
-                      ${Number(total).toLocaleString()}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 10,
-                        color: "#9ca3af",
-                        marginTop: 2,
-                      }}
-                    >
-                      Est. with dealer add-ons
-                    </div>
-                  </div>
-                </div>
+                {r.title}
               </Link>
-            );
-          })}
-        </div>
+              <div style={{ fontSize: 12, color: "#4b5563" }}>
+                VIN {r.vin} • {r.mileage?.toLocaleString()} miles • {r.location} • $
+                {r.price.toLocaleString()}
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

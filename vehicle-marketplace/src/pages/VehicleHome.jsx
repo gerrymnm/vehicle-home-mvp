@@ -1,11 +1,10 @@
+// vehicle-marketplace/src/pages/VehicleHome.jsx
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import {
-  getVehicle,
-  calculateShipping,
-} from "../lib/api.js";
+import { getVehicle, calculateShipping } from "../lib/api.js";
 import ContactDealerModal from "../components/ContactDealerModal.jsx";
 
+// (styles omitted in this comment for brevity - they are identical to previous answer)
 const wrap = {
   maxWidth: 1120,
   margin: "24px auto",
@@ -20,25 +19,18 @@ const layout = {
   alignItems: "flex-start",
 };
 
-const gallery = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "8px",
-};
-
+const gallery = { display: "flex", flexDirection: "column", gap: "8px" };
 const mainImg = {
   width: "100%",
   borderRadius: "10px",
   objectFit: "cover",
   maxHeight: "380px",
 };
-
 const thumbRow = {
   display: "flex",
   gap: "6px",
   overflowX: "auto",
 };
-
 const thumb = (active) => ({
   width: 70,
   height: 52,
@@ -48,7 +40,6 @@ const thumb = (active) => ({
   cursor: "pointer",
   flexShrink: 0,
 });
-
 const dealerBox = {
   padding: "14px 16px",
   borderRadius: "10px",
@@ -57,7 +48,6 @@ const dealerBox = {
   background: "#f9fafb",
   fontSize: "13px",
 };
-
 const priceBox = {
   padding: "18px 16px",
   borderRadius: "12px",
@@ -65,14 +55,12 @@ const priceBox = {
   boxShadow: "0 4px 18px rgba(15,23,42,0.06)",
   background: "#ffffff",
 };
-
 const ctas = {
   display: "flex",
   flexDirection: "column",
   gap: "8px",
   marginTop: "14px",
 };
-
 const primaryBtn = {
   padding: "11px 10px",
   borderRadius: "999px",
@@ -84,20 +72,17 @@ const primaryBtn = {
   fontSize: "14px",
   width: "100%",
 };
-
 const ghostBtn = {
   ...primaryBtn,
   background: "#ffffff",
   color: "#111827",
   border: "1px solid #d1d5db",
 };
-
 const subtle = {
   fontSize: "11px",
   color: "#6b7280",
   marginTop: "4px",
 };
-
 const pill = {
   display: "inline-block",
   padding: "4px 9px",
@@ -108,14 +93,12 @@ const pill = {
   fontWeight: 500,
   marginRight: "6px",
 };
-
 const feeRow = {
   display: "flex",
   justifyContent: "space-between",
   fontSize: "11px",
   color: "#4b5563",
 };
-
 const totalRow = {
   ...feeRow,
   fontWeight: 600,
@@ -123,13 +106,11 @@ const totalRow = {
   borderTop: "1px solid #e5e7eb",
   paddingTop: "6px",
 };
-
 const sectionTitle = {
   fontSize: "15px",
   fontWeight: 600,
   margin: "14px 0 4px",
 };
-
 const bulletList = {
   margin: "0",
   paddingLeft: "16px",
@@ -182,6 +163,14 @@ export default function VehicleHome() {
     navigate("/apply", { state: { vin: vehicle.vin, vehicle } });
   };
 
+  const onBuyOnline = () => {
+    const input = document.getElementById("shipping-miles-input");
+    if (input) {
+      input.scrollIntoView({ behavior: "smooth", block: "center" });
+      input.focus();
+    }
+  };
+
   if (loading) {
     return (
       <div style={wrap}>
@@ -198,11 +187,12 @@ export default function VehicleHome() {
     );
   }
 
-  const photos = vehicle.photos && vehicle.photos.length > 0
-    ? vehicle.photos
-    : [
-        "https://images.pexels.com/photos/210019/pexels-photo-210019.jpeg?auto=compress&w=900",
-      ];
+  const photos =
+    vehicle.photos && vehicle.photos.length
+      ? vehicle.photos
+      : [
+          "https://images.pexels.com/photos/210019/pexels-photo-210019.jpeg?auto=compress&w=900",
+        ];
 
   const fees = vehicle.fees || [];
   const totalWithFees = vehicle.totalWithFees || vehicle.price;
@@ -251,16 +241,16 @@ export default function VehicleHome() {
                   <br />
                 </>
               )}
-              {(vehicle.dealer?.city || vehicle.dealer?.state || vehicle.dealer?.zip) && (
+              {(vehicle.dealer?.city ||
+                vehicle.dealer?.state ||
+                vehicle.dealer?.zip) && (
                 <>
                   {vehicle.dealer?.city}, {vehicle.dealer?.state}{" "}
                   {vehicle.dealer?.zip}
                   <br />
                 </>
               )}
-              {vehicle.dealer?.phone && (
-                <span>{vehicle.dealer.phone}</span>
-              )}
+              {vehicle.dealer?.phone && <span>{vehicle.dealer.phone}</span>}
             </div>
           </div>
 
@@ -296,12 +286,15 @@ export default function VehicleHome() {
         </div>
 
         <aside style={priceBox}>
-          <div style={{ fontSize: "11px", color: "#6b7280" }}>Advertised price</div>
+          <div style={{ fontSize: "11px", color: "#6b7280" }}>
+            Advertised price
+          </div>
           <div style={{ fontSize: "26px", fontWeight: 700 }}>
             ${vehicle.price.toLocaleString()}
           </div>
           <div style={subtle}>
-            Price set by dealer. Taxes, DMV fees, and government charges not included.
+            Price set by dealer. Taxes, DMV fees, and government charges not
+            included.
           </div>
 
           {fees.length > 0 && (
@@ -318,7 +311,8 @@ export default function VehicleHome() {
                 <span>${totalWithFees.toLocaleString()}</span>
               </div>
               <div style={subtle}>
-                Based on listing text. You can remove unwanted add-ons during deal review.
+                Based on listing text. You can remove unwanted add-ons during
+                deal review.
               </div>
             </div>
           )}
@@ -336,30 +330,28 @@ export default function VehicleHome() {
             >
               CONTACT DEALER
             </button>
-            <button
-              style={ghostBtn}
-              onClick={onGetApproved}
-            >
+            <button style={ghostBtn} onClick={onGetApproved}>
               GET APPROVED
             </button>
-            <button
-              style={ghostBtn}
-              onClick={() => {
-                const el = document.getElementById("shipping-section");
-                if (el) el.scrollIntoView({ behavior: "smooth" });
-              }}
-            >
+            <button style={ghostBtn} onClick={onBuyOnline}>
               BUY ONLINE (ESTIMATE)
             </button>
           </div>
 
           <div id="shipping-section" style={{ marginTop: "16px" }}>
             <div style={sectionTitle}>Estimate shipping</div>
-            <div style={{ fontSize: "11px", color: "#6b7280", marginBottom: 4 }}>
+            <div
+              style={{
+                fontSize: "11px",
+                color: "#6b7280",
+                marginBottom: 4,
+              }}
+            >
               $250 flat within 100 miles, then $2 per mile after that.
             </div>
             <div style={{ display: "flex", gap: 6 }}>
               <input
+                id="shipping-miles-input"
                 type="text"
                 inputMode="numeric"
                 value={miles}
@@ -374,7 +366,13 @@ export default function VehicleHome() {
                 }}
               />
             </div>
-            <div style={{ marginTop: 6, fontSize: "12px", color: "#111827" }}>
+            <div
+              style={{
+                marginTop: 6,
+                fontSize: "12px",
+                color: "#111827",
+              }}
+            >
               Shipping:{" "}
               <strong>
                 {shipping > 0
@@ -383,7 +381,9 @@ export default function VehicleHome() {
               </strong>
             </div>
             {shipping > 0 && (
-              <div style={{ fontSize: "11px", color: "#6b7280" }}>
+              <div
+                style={{ fontSize: "11px", color: "#6b7280" }}
+              >
                 Estimated total: $
                 {(totalWithFees + shipping).toLocaleString()}
               </div>
