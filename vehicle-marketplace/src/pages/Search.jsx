@@ -1,11 +1,51 @@
 // vehicle-marketplace/src/pages/Search.jsx
+
 import React, { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { searchVehicles } from "../lib/api.js";
+import {
+  searchVehicles,
+  analyzeFees,
+  computeTotalWithFees,
+} from "../lib/api.js";
 
-const wrap = { maxWidth: 960, margin: "24px auto", padding: "0 16px" };
-const h1 = { fontSize: "22px", fontWeight: 600, marginBottom: 12 };
+const wrap = { maxWidth: 1080, margin: "24px auto", padding: "0 16px" };
+const h1 = { fontSize: "22px", fontWeight: 600, margin: "0 0 16px" };
 const err = { color: "crimson", marginTop: 12 };
+const hint = { color: "#777", fontSize: 12, margin: "4px 0 16px" };
+
+function formatMoney(v) {
+  if (v == null || Number.isNaN(v)) return "--";
+  return v.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+}
+
+function calcDefaultDown(total) {
+  if (!total || total <= 0) return 0;
+  // 10% rounded up to nearest $1,000
+  let down = Math.ceil((total * 0.1) / 1000) * 1000;
+  // Ensure loan amount not below $5,000
+  if (total - down < 5000) {
+    down = Math.max(0, total - 5000);
+  }
+  return down;
+}
+
+function calcMonthly(total, down, termMonths, apr = 0.075) {
+  if (!total || termMonths <= 0) return null;
+
+  const loan = Math.max(total - (down || 0), 0);
+  if (loan <= 0) return 0;
+
+  const monthlyRate = apr / 12;
+  if (monthlyRate === 0) return loan / termMonths;
+
+  const pow = Math.pow(1 + monthlyRate, termMonths);
+  const payment = (loan * monthlyRate * pow) / (pow - 1);
+  return payment;
+}
 
 export default function Search() {
   const [params, setParams] = useSearchParams();
@@ -19,7 +59,7 @@ export default function Search() {
   useEffect(() => {
     const run = async () => {
       const query = params.get("q") || "";
-      if (!query.trim()) {
+      if (!query) {
         setResults([]);
         setError("");
         return;
@@ -30,10 +70,43 @@ export default function Search() {
         const data = await searchVehicles({
           q: query,
           page,
-          pagesize: 50,
+          pagesize: 20,
+          dir: "asc",
         });
-        setResults(Array.isArray(data.results) ? data.results : []);
+
+        const list = Array.isArray(data.results) ? data.results : [];
+
+        // Enrich each vehicle with fee + payment teaser for SRP
+        const enriched = list.map((v) => {
+          const basePrice = Number(v.price) || 0;
+          const desc =
+            v.description ||
+            v.comments ||
+            v.highlights ||
+            ""; // whatever dummy field exists
+
+          const feeAnalysis = analyzeFees(desc);
+          const total = computeTotalWithFees(basePrice, feeAnalysis);
+
+          const term = 72;
+          const down = calcDefaultDown(total);
+          const monthly = calcMonthly(total, down, term);
+
+          return {
+            ...v,
+            _vh: {
+              total,
+              down,
+              term,
+              monthly,
+              feeAnalysis,
+            },
+          };
+        });
+
+        setResults(enriched);
       } catch (e) {
+        console.error(e);
         setError(`Search failed: ${e.message || e}`);
         setResults([]);
       } finally {
@@ -46,7 +119,7 @@ export default function Search() {
   const onSubmit = (e) => {
     e.preventDefault();
     const next = new URLSearchParams(params);
-    if (q.trim()) next.set("q", q.trim());
+    if (q) next.set("q", q);
     else next.delete("q");
     next.set("page", "1");
     setParams(next);
@@ -61,38 +134,210 @@ export default function Search() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search by make, model, VIN…"
-          style={{ flex: 1, padding: "8px 10px", borderRadius: 6, border: "1px solid #d1d5db" }}
+          style={{
+            flex: 1,
+            padding: "9px 11px",
+            borderRadius: 4,
+            border: "1px solid #ccc",
+            fontSize: 14,
+          }}
         />
-        <button type="submit" style={{ padding: "8px 14px", borderRadius: 6 }}>
+        <button
+          type="submit"
+          style={{
+            padding: "9px 16px",
+            borderRadius: 4,
+            border: "none",
+            background: "#111827",
+            color: "#fff",
+            cursor: "pointer",
+            fontSize: 14,
+            fontWeight: 500,
+          }}
+        >
           Search
         </button>
       </form>
 
-      <p style={{ color: "#6b7280", fontSize: 12, marginTop: 8 }}>
-        Try: <em>Mazda, Chevrolet, Subaru, Charger</em>
+      <p style={hint}>
+        Try: <em>Mazda, Accord, Grand Cherokee</em>
       </p>
 
       {loading && <p>Loading…</p>}
       {error && <p style={err}>Error: {error}</p>}
 
-      {!loading && !error && params.get("q") && (
-        <ul style={{ marginTop: 16, listStyle: "none", padding: 0 }}>
-          {results.length === 0 && <p>No results.</p>}
-          {results.map((r) => (
-            <li key={r.vin} style={{ marginBottom: 14, paddingBottom: 10, borderBottom: "1px solid #f3f4f6" }}>
-              <Link
-                to={`/vehicles/${r.vin}`}
-                style={{ fontWeight: 600, textDecoration: "none", color: "#111827" }}
-              >
-                {r.title}
-              </Link>
-              <div style={{ fontSize: 12, color: "#4b5563" }}>
-                VIN {r.vin} • {r.mileage?.toLocaleString()} miles • {r.location} • $
-                {r.price.toLocaleString()}
-              </div>
-            </li>
-          ))}
-        </ul>
+      {!loading && !error && (
+        <>
+          {results.length === 0 ? (
+            <p>No results.</p>
+          ) : (
+            <ul style={{ listStyle: "none", padding: 0, marginTop: 8 }}>
+              {results.map((r) => {
+                const price = Number(r.price) || 0;
+                const teaser = r._vh || {};
+                const monthly = teaser.monthly;
+                const down = teaser.down;
+                const term = teaser.term;
+                const total = teaser.total;
+
+                return (
+                  <li
+                    key={r.vin}
+                    style={{
+                      display: "flex",
+                      gap: 16,
+                      padding: "14px 0",
+                      borderBottom: "1px solid #eee",
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    {/* Thumbnail */}
+                    <Link
+                      to={`/vehicles/${r.vin}`}
+                      style={{ display: "block", flexShrink: 0 }}
+                    >
+                      <div
+                        style={{
+                          width: 140,
+                          height: 84,
+                          background:
+                            "url('https://images.pexels.com/photos/210019/pexels-photo-210019.jpeg?auto=compress&w=600') center/cover no-repeat",
+                          borderRadius: 6,
+                        }}
+                      />
+                    </Link>
+
+                    {/* Main content */}
+                    <div style={{ flex: 1 }}>
+                      <Link
+                        to={`/vehicles/${r.vin}`}
+                        style={{
+                          fontSize: 16,
+                          fontWeight: 600,
+                          color: "#111827",
+                          textDecoration: "none",
+                        }}
+                      >
+                        {r.title ||
+                          `${r.year} ${r.make} ${r.model}${
+                            r.trim ? " " + r.trim : ""
+                          }`}
+                      </Link>
+
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "#6b7280",
+                          marginTop: 2,
+                        }}
+                      >
+                        VIN: {r.vin}
+                        {r.mileage && (
+                          <>
+                            {" "}
+                            • {Number(r.mileage).toLocaleString()} miles
+                          </>
+                        )}
+                        {r.location && <> • {r.location}</>}
+                        {r.dealerName && <> • {r.dealerName}</>}
+                      </div>
+
+                      {/* Price + teaser row */}
+                      <div
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: 14,
+                          alignItems: "baseline",
+                          marginTop: 6,
+                          fontSize: 13,
+                        }}
+                      >
+                        <div>
+                          <div
+                            style={{
+                              fontSize: 18,
+                              fontWeight: 600,
+                              color: "#111827",
+                            }}
+                          >
+                            {formatMoney(price)}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 10,
+                              color: "#6b7280",
+                            }}
+                          >
+                            Advertised price
+                          </div>
+                        </div>
+
+                        {total && total > price && (
+                          <div>
+                            <div
+                              style={{
+                                fontSize: 13,
+                                fontWeight: 500,
+                                color: "#111827",
+                              }}
+                            >
+                              {formatMoney(total)}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 10,
+                                color: "#6b7280",
+                              }}
+                            >
+                              Est. out-the-door
+                              <span> (price + fees/tax/DMV)</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {monthly && monthly > 0 && (
+                          <div>
+                            <div
+                              style={{
+                                fontSize: 13,
+                                fontWeight: 600,
+                                color: "#111827",
+                              }}
+                            >
+                              From {formatMoney(monthly)}/mo
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 10,
+                                color: "#6b7280",
+                              }}
+                            >
+                              with {formatMoney(down)} down • {term} mo • est.
+                              APR 7.5%
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Tag line */}
+                      <div
+                        style={{
+                          marginTop: 4,
+                          fontSize: 10,
+                          color: "#93a3b8",
+                        }}
+                      >
+                        Transparent fees previewed. Exact totals on vehicle
+                        page.
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
       )}
     </div>
   );
