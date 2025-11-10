@@ -1,490 +1,408 @@
-// src/pages/VehicleHome.jsx
 import React, { useEffect, useState } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   getVehicle,
   calculateShipping,
 } from "../lib/api.js";
 import ContactDealerModal from "../components/ContactDealerModal.jsx";
 
-const wrap = { maxWidth: 1040, margin: "24px auto", padding: "0 16px" };
-const title = { fontSize: 24, fontWeight: 700, margin: "0 0 16px" };
-const err = { color: "crimson", marginTop: 12 };
+const wrap = {
+  maxWidth: 1120,
+  margin: "24px auto",
+  padding: "0 16px 40px",
+  fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+};
+
+const layout = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 3fr) minmax(260px, 1.6fr)",
+  gap: "24px",
+  alignItems: "flex-start",
+};
+
+const gallery = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "8px",
+};
+
+const mainImg = {
+  width: "100%",
+  borderRadius: "10px",
+  objectFit: "cover",
+  maxHeight: "380px",
+};
+
+const thumbRow = {
+  display: "flex",
+  gap: "6px",
+  overflowX: "auto",
+};
+
+const thumb = (active) => ({
+  width: 70,
+  height: 52,
+  objectFit: "cover",
+  borderRadius: "6px",
+  border: active ? "2px solid #2563eb" : "1px solid #e5e7eb",
+  cursor: "pointer",
+  flexShrink: 0,
+});
+
+const dealerBox = {
+  padding: "14px 16px",
+  borderRadius: "10px",
+  border: "1px solid #e5e7eb",
+  marginTop: "10px",
+  background: "#f9fafb",
+  fontSize: "13px",
+};
+
+const priceBox = {
+  padding: "18px 16px",
+  borderRadius: "12px",
+  border: "1px solid #e5e7eb",
+  boxShadow: "0 4px 18px rgba(15,23,42,0.06)",
+  background: "#ffffff",
+};
+
+const ctas = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "8px",
+  marginTop: "14px",
+};
+
+const primaryBtn = {
+  padding: "11px 10px",
+  borderRadius: "999px",
+  border: "none",
+  background: "#111827",
+  color: "#ffffff",
+  fontWeight: 600,
+  cursor: "pointer",
+  fontSize: "14px",
+  width: "100%",
+};
+
+const ghostBtn = {
+  ...primaryBtn,
+  background: "#ffffff",
+  color: "#111827",
+  border: "1px solid #d1d5db",
+};
+
+const subtle = {
+  fontSize: "11px",
+  color: "#6b7280",
+  marginTop: "4px",
+};
+
+const pill = {
+  display: "inline-block",
+  padding: "4px 9px",
+  borderRadius: "999px",
+  background: "#eff6ff",
+  color: "#1d4ed8",
+  fontSize: "11px",
+  fontWeight: 500,
+  marginRight: "6px",
+};
+
+const feeRow = {
+  display: "flex",
+  justifyContent: "space-between",
+  fontSize: "11px",
+  color: "#4b5563",
+};
+
+const totalRow = {
+  ...feeRow,
+  fontWeight: 600,
+  marginTop: "6px",
+  borderTop: "1px solid #e5e7eb",
+  paddingTop: "6px",
+};
+
+const sectionTitle = {
+  fontSize: "15px",
+  fontWeight: 600,
+  margin: "14px 0 4px",
+};
+
+const bulletList = {
+  margin: "0",
+  paddingLeft: "16px",
+  fontSize: "12px",
+  color: "#4b5563",
+};
 
 export default function VehicleHome() {
   const { vin } = useParams();
-  const nav = useNavigate();
-
-  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
   const [vehicle, setVehicle] = useState(null);
-  const [error, setError] = useState("");
-
+  const [photoIndex, setPhotoIndex] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
   const [contactOpen, setContactOpen] = useState(false);
-  const [distance, setDistance] = useState("");
-  const [shipping, setShipping] = useState(null);
+  const [miles, setMiles] = useState("");
+  const [shipping, setShipping] = useState(0);
 
   useEffect(() => {
-    let on = true;
-    (async () => {
-      setLoading(true);
-      setError("");
-      try {
-        const res = await getVehicle(vin);
-        if (on) {
-          setVehicle(res.vehicle);
-        }
-      } catch (e) {
-        if (on) {
-          setError(e.message || "Not found");
-          setVehicle(null);
-        }
-      } finally {
-        if (on) setLoading(false);
-      }
-    })();
+    let cancelled = false;
+    setLoading(true);
+    setErr("");
+    getVehicle(vin)
+      .then((res) => {
+        if (cancelled) return;
+        setVehicle(res.vehicle);
+        setPhotoIndex(0);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setErr(e.message || "Vehicle not found");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
     return () => {
-      on = false;
+      cancelled = true;
     };
   }, [vin]);
 
-  const onCalcShipping = () => {
-    const fee = calculateShipping(distance);
-    if (!fee) {
-      setShipping(null);
-      alert("Enter a valid distance in miles.");
-      return;
-    }
-    setShipping(fee);
+  const onMilesChange = (e) => {
+    const value = e.target.value.replace(/[^\d]/g, "");
+    setMiles(value);
+    const dist = Number(value || 0);
+    setShipping(calculateShipping(dist));
   };
 
-  const onBuyOnline = () => {
-    if (!shipping) {
-      onCalcShipping();
-      return;
-    }
-    alert(
-      `Demo only.\nVehicle total with shipping: $${formatMoney(
-        (vehicle.totalWithFees || vehicle.price) + shipping
-      )}`
-    );
+  const onGetApproved = () => {
+    if (!vehicle) return;
+    navigate("/apply", { state: { vin: vehicle.vin, vehicle } });
   };
+
+  if (loading) {
+    return (
+      <div style={wrap}>
+        <p>Loading vehicle...</p>
+      </div>
+    );
+  }
+
+  if (err || !vehicle) {
+    return (
+      <div style={wrap}>
+        <p style={{ color: "crimson" }}>{err || "Vehicle not found."}</p>
+      </div>
+    );
+  }
+
+  const photos = vehicle.photos && vehicle.photos.length > 0
+    ? vehicle.photos
+    : [
+        "https://images.pexels.com/photos/210019/pexels-photo-210019.jpeg?auto=compress&w=900",
+      ];
+
+  const fees = vehicle.fees || [];
+  const totalWithFees = vehicle.totalWithFees || vehicle.price;
 
   return (
     <div style={wrap}>
-      <p style={{ fontSize: 12, margin: "0 0 16px" }}>
-        ← <Link to="/search">Back to search</Link>
-      </p>
+      <div style={{ marginBottom: "10px", fontSize: "11px", color: "#6b7280" }}>
+        {vehicle.year} {vehicle.make} {vehicle.model}
+        {vehicle.trim ? ` ${vehicle.trim}` : ""} • VIN {vehicle.vin}
+      </div>
 
-      {loading && <p>Loading…</p>}
-      {!loading && error && <p style={err}>Error: {error}</p>}
-      {!loading && !error && vehicle && (
-        <>
-          <h1 style={title}>
-            {vehicle.year} {vehicle.make} {vehicle.model}
-            {vehicle.trim ? ` ${vehicle.trim}` : ""}
-          </h1>
-
-          {/* Dealer info prominently under images */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "minmax(0, 3fr) minmax(260px, 1.7fr)",
-              gap: 24,
-              alignItems: "flex-start",
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    vehicle.images && vehicle.images.length > 1
-                      ? "2fr 1fr"
-                      : "1fr",
-                  gap: 8,
-                  marginBottom: 12,
-                }}
-              >
-                <div
-                  style={{
-                    height: 260,
-                    borderRadius: 10,
-                    overflow: "hidden",
-                    background: "#f3f4f6",
-                  }}
-                >
-                  {vehicle.images?.[0] && (
-                    <img
-                      src={vehicle.images[0]}
-                      alt="Primary"
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                        display: "block",
-                      }}
-                    />
-                  )}
-                </div>
-                {vehicle.images?.[1] && (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 8,
-                    }}
-                  >
-                    <div
-                      style={{
-                        flex: 1,
-                        borderRadius: 10,
-                        overflow: "hidden",
-                        background: "#f9fafb",
-                      }}
-                    >
-                      <img
-                        src={vehicle.images[1]}
-                        alt="Alt view"
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                          display: "block",
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
+      <div style={layout}>
+        <div>
+          <div style={gallery}>
+            <img
+              src={photos[Math.max(0, Math.min(photoIndex, photos.length - 1))]}
+              alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+              style={mainImg}
+            />
+            {photos.length > 1 && (
+              <div style={thumbRow}>
+                {photos.map((src, idx) => (
+                  <img
+                    key={idx}
+                    src={src}
+                    alt=""
+                    style={thumb(idx === photoIndex)}
+                    onClick={() => setPhotoIndex(idx)}
+                  />
+                ))}
               </div>
-
-              <div
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 8,
-                  background: "#f9fafb",
-                  marginBottom: 16,
-                  fontSize: 13,
-                }}
-              >
-                <div style={{ fontWeight: 700 }}>
-                  {vehicle.dealer?.name || "Dealer Name"}
-                </div>
-                <div style={{ color: "#4b5563" }}>
-                  {vehicle.dealer?.address || "Dealer address"}
-                </div>
-                {vehicle.dealer?.phone && (
-                  <div style={{ color: "#111827", marginTop: 4 }}>
-                    {vehicle.dealer.phone}
-                  </div>
-                )}
-              </div>
-
-              <section>
-                <h3
-                  style={{
-                    fontSize: 16,
-                    fontWeight: 600,
-                    margin: "0 0 6px",
-                  }}
-                >
-                  Vehicle details
-                </h3>
-                <p style={{ margin: "0 0 4px", fontSize: 13 }}>
-                  VIN: {vehicle.vin}
-                </p>
-                <p style={{ margin: "0 0 4px", fontSize: 13 }}>
-                  {vehicle.mileage != null
-                    ? `${formatNumber(vehicle.mileage)} miles`
-                    : "Mileage N/A"}{" "}
-                  • {vehicle.location}
-                </p>
-                {vehicle.description && (
-                  <p
-                    style={{
-                      margin: "8px 0 0",
-                      fontSize: 13,
-                      color: "#4b5563",
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {vehicle.description}
-                  </p>
-                )}
-              </section>
-
-              <section style={{ marginTop: 18 }}>
-                <h3
-                  style={{
-                    fontSize: 16,
-                    fontWeight: 600,
-                    margin: "0 0 4px",
-                  }}
-                >
-                  Vehicle history (sample)
-                </h3>
-                {vehicle.history ? (
-                  <ul
-                    style={{
-                      paddingLeft: 16,
-                      margin: 0,
-                      fontSize: 13,
-                      color: "#4b5563",
-                    }}
-                  >
-                    <li>Owners: {vehicle.history.owners}</li>
-                    <li>Accidents reported: {vehicle.history.accidents}</li>
-                    <li>Usage: {vehicle.history.usage}</li>
-                    {vehicle.history.highlights?.map((h, i) => (
-                      <li key={i}>{h}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p style={{ fontSize: 13, color: "#6b7280" }}>
-                    History report not attached (demo).
-                  </p>
-                )}
-              </section>
-            </div>
-
-            {/* Right column: pricing + CTAs */}
-            <aside
-              style={{
-                borderRadius: 12,
-                border: "1px solid #e5e7eb",
-                padding: 16,
-                display: "flex",
-                flexDirection: "column",
-                gap: 10,
-                position: "sticky",
-                top: 16,
-                background: "#fff",
-              }}
-            >
-              <h3
-                style={{
-                  fontSize: 16,
-                  fontWeight: 600,
-                  margin: 0,
-                }}
-              >
-                Pricing breakdown
-              </h3>
-              <table
-                style={{
-                  width: "100%",
-                  fontSize: 13,
-                  borderCollapse: "collapse",
-                }}
-              >
-                <tbody>
-                  <tr>
-                    <td>Vehicle price</td>
-                    <td style={{ textAlign: "right", fontWeight: 600 }}>
-                      ${formatMoney(vehicle.price)}
-                    </td>
-                  </tr>
-                  {vehicle.fees?.map((f, i) => (
-                    <tr key={i}>
-                      <td>{f.label}</td>
-                      <td style={{ textAlign: "right" }}>
-                        {typeof f.amount === "number"
-                          ? `+$${formatMoney(f.amount)}`
-                          : "+ added by dealer"}
-                      </td>
-                    </tr>
-                  ))}
-                  <tr>
-                    <td
-                      style={{
-                        paddingTop: 4,
-                        borderTop: "1px solid #e5e7eb",
-                        fontWeight: 600,
-                      }}
-                    >
-                      Subtotal w/ add-ons
-                    </td>
-                    <td
-                      style={{
-                        paddingTop: 4,
-                        borderTop: "1px solid #e5e7eb",
-                        textAlign: "right",
-                        fontWeight: 700,
-                      }}
-                    >
-                      $
-                      {formatMoney(
-                        vehicle.totalWithFees || vehicle.price
-                      )}
-                    </td>
-                  </tr>
-                  {shipping != null && (
-                    <>
-                      <tr>
-                        <td>Shipping (Buy Online)</td>
-                        <td style={{ textAlign: "right" }}>
-                          +${formatMoney(shipping)}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td
-                          style={{
-                            paddingTop: 4,
-                            borderTop: "1px solid #e5e7eb",
-                            fontWeight: 700,
-                          }}
-                        >
-                          Total delivered
-                        </td>
-                        <td
-                          style={{
-                            paddingTop: 4,
-                            borderTop: "1px solid #e5e7eb",
-                            textAlign: "right",
-                            fontWeight: 800,
-                          }}
-                        >
-                          $
-                          {formatMoney(
-                            (vehicle.totalWithFees || vehicle.price) +
-                              shipping
-                          )}
-                        </td>
-                      </tr>
-                    </>
-                  )}
-                </tbody>
-              </table>
-
-              <div
-                style={{
-                  marginTop: 8,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                }}
-              >
-                <button
-                  onClick={() => setContactOpen(true)}
-                  style={btnPrimary}
-                >
-                  CONTACT DEALER
-                </button>
-                <button
-                  onClick={() => nav("/credit-application")}
-                  style={btnSecondary}
-                >
-                  GET APPROVED
-                </button>
-                <div
-                  style={{
-                    padding: 8,
-                    borderRadius: 8,
-                    background: "#f9fafb",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 6,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: "#111827",
-                    }}
-                  >
-                    Buy online
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "#6b7280",
-                    }}
-                  >
-                    Enter your estimated distance from the dealership to
-                    preview delivered pricing.
-                  </div>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <input
-                      type="number"
-                      min="1"
-                      placeholder="Distance (miles)"
-                      value={distance}
-                      onChange={(e) => setDistance(e.target.value)}
-                      style={{
-                        flex: 1,
-                        padding: "6px 8px",
-                        borderRadius: 6,
-                        border: "1px solid #d1d5db",
-                        fontSize: 12,
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={onCalcShipping}
-                      style={{
-                        padding: "6px 10px",
-                        borderRadius: 6,
-                        border: "1px solid #111827",
-                        background: "#fff",
-                        fontSize: 11,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Calc
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={onBuyOnline}
-                    style={btnPrimarySm}
-                  >
-                    BUY ONLINE (DEMO)
-                  </button>
-                </div>
-              </div>
-            </aside>
+            )}
           </div>
 
-          <ContactDealerModal
-            open={contactOpen}
-            onClose={() => setContactOpen(false)}
-            dealer={vehicle.dealer}
-          />
-        </>
+          <div style={dealerBox}>
+            <div style={{ fontSize: "12px", color: "#6b7280" }}>
+              Selling dealer
+            </div>
+            <div style={{ fontSize: "15px", fontWeight: 600 }}>
+              {vehicle.dealer?.name || "Partner Dealer"}
+            </div>
+            <div>
+              {vehicle.dealer?.address && (
+                <>
+                  {vehicle.dealer.address}
+                  <br />
+                </>
+              )}
+              {(vehicle.dealer?.city || vehicle.dealer?.state || vehicle.dealer?.zip) && (
+                <>
+                  {vehicle.dealer?.city}, {vehicle.dealer?.state}{" "}
+                  {vehicle.dealer?.zip}
+                  <br />
+                </>
+              )}
+              {vehicle.dealer?.phone && (
+                <span>{vehicle.dealer.phone}</span>
+              )}
+            </div>
+          </div>
+
+          <div style={{ marginTop: "18px" }}>
+            <div style={sectionTitle}>Highlights</div>
+            <ul style={bulletList}>
+              <li>
+                {vehicle.year} {vehicle.make} {vehicle.model}
+                {vehicle.trim ? ` ${vehicle.trim}` : ""} •{" "}
+                {vehicle.mileage?.toLocaleString()} miles •{" "}
+                {vehicle.condition}
+              </li>
+              {vehicle.bodyStyle && <li>{vehicle.bodyStyle}</li>}
+              {vehicle.drivetrain && <li>{vehicle.drivetrain}</li>}
+              {vehicle.transmission && <li>{vehicle.transmission}</li>}
+              {vehicle.fuelType && <li>{vehicle.fuelType}</li>}
+              {vehicle.color && <li>Exterior: {vehicle.color}</li>}
+            </ul>
+
+            <div style={sectionTitle}>Vehicle description</div>
+            <p
+              style={{
+                fontSize: "12px",
+                color: "#4b5563",
+                lineHeight: 1.6,
+                whiteSpace: "pre-line",
+              }}
+            >
+              {vehicle.description ||
+                "Dealer-supplied description coming soon."}
+            </p>
+          </div>
+        </div>
+
+        <aside style={priceBox}>
+          <div style={{ fontSize: "11px", color: "#6b7280" }}>Advertised price</div>
+          <div style={{ fontSize: "26px", fontWeight: 700 }}>
+            ${vehicle.price.toLocaleString()}
+          </div>
+          <div style={subtle}>
+            Price set by dealer. Taxes, DMV fees, and government charges not included.
+          </div>
+
+          {fees.length > 0 && (
+            <div style={{ marginTop: "10px" }}>
+              <div style={sectionTitle}>Detected dealer add-ons</div>
+              {fees.map((f, i) => (
+                <div key={i} style={feeRow}>
+                  <span>{f.label}</span>
+                  <span>+${Number(f.amount).toLocaleString()}</span>
+                </div>
+              ))}
+              <div style={totalRow}>
+                <span>Price with dealer add-ons</span>
+                <span>${totalWithFees.toLocaleString()}</span>
+              </div>
+              <div style={subtle}>
+                Based on listing text. You can remove unwanted add-ons during deal review.
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginTop: "14px" }}>
+            <span style={pill}>Transparent fees</span>
+            <span style={pill}>Online ready</span>
+            <span style={pill}>Ship to your door</span>
+          </div>
+
+          <div style={ctas}>
+            <button
+              style={primaryBtn}
+              onClick={() => setContactOpen(true)}
+            >
+              CONTACT DEALER
+            </button>
+            <button
+              style={ghostBtn}
+              onClick={onGetApproved}
+            >
+              GET APPROVED
+            </button>
+            <button
+              style={ghostBtn}
+              onClick={() => {
+                const el = document.getElementById("shipping-section");
+                if (el) el.scrollIntoView({ behavior: "smooth" });
+              }}
+            >
+              BUY ONLINE (ESTIMATE)
+            </button>
+          </div>
+
+          <div id="shipping-section" style={{ marginTop: "16px" }}>
+            <div style={sectionTitle}>Estimate shipping</div>
+            <div style={{ fontSize: "11px", color: "#6b7280", marginBottom: 4 }}>
+              $250 flat within 100 miles, then $2 per mile after that.
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={miles}
+                onChange={onMilesChange}
+                placeholder="Distance in miles"
+                style={{
+                  flex: 1,
+                  padding: "7px 9px",
+                  borderRadius: "8px",
+                  border: "1px solid #d1d5db",
+                  fontSize: "12px",
+                }}
+              />
+            </div>
+            <div style={{ marginTop: 6, fontSize: "12px", color: "#111827" }}>
+              Shipping:{" "}
+              <strong>
+                {shipping > 0
+                  ? `$${shipping.toLocaleString()}`
+                  : "--"}
+              </strong>
+            </div>
+            {shipping > 0 && (
+              <div style={{ fontSize: "11px", color: "#6b7280" }}>
+                Estimated total: $
+                {(totalWithFees + shipping).toLocaleString()}
+              </div>
+            )}
+          </div>
+
+          <div style={subtle}>
+            This is a demo marketplace using sample data for illustration only.
+          </div>
+        </aside>
+      </div>
+
+      {contactOpen && (
+        <ContactDealerModal
+          vehicle={vehicle}
+          dealer={vehicle.dealer}
+          onClose={() => setContactOpen(false)}
+        />
       )}
     </div>
   );
 }
-
-function formatMoney(n) {
-  return Number(n || 0).toLocaleString();
-}
-function formatNumber(n) {
-  return Number(n || 0).toLocaleString();
-}
-
-const btnPrimary = {
-  padding: "10px 14px",
-  borderRadius: 8,
-  border: "none",
-  background: "#111827",
-  color: "#fff",
-  fontWeight: 700,
-  fontSize: 12,
-  cursor: "pointer",
-};
-const btnPrimarySm = {
-  ...btnPrimary,
-  padding: "7px 10px",
-  fontSize: 11,
-};
-const btnSecondary = {
-  padding: "9px 14px",
-  borderRadius: 8,
-  border: "1px solid #111827",
-  background: "#fff",
-  color: "#111827",
-  fontWeight: 600,
-  fontSize: 12,
-  cursor: "pointer",
-};
