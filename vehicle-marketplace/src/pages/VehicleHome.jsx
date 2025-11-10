@@ -131,6 +131,12 @@ const bulletList = {
   color: "#4b5563",
 };
 
+// Payment calculator constants (demo)
+const TERMS = [24, 36, 48, 60, 72, 84];
+const DEFAULT_TERM = 72;
+const MIN_LOAN = 5000;
+const APR = 0.075; // 7.5% APR demo
+
 // --- Helper: build out-the-door cost estimate from ZIP (demo logic) ---
 function buildCostBreakdown({ vehicle, zip }) {
   if (!vehicle || !zip || zip.length < 5) return null;
@@ -138,7 +144,7 @@ function buildCostBreakdown({ vehicle, zip }) {
   const fees = vehicle.fees || [];
   const feesTotal = fees.reduce((sum, f) => sum + (Number(f.amount) || 0), 0);
 
-  // Use detected doc fee if we have one; else assume $85 for demo.
+  // Use detected doc fee if present; else assume $85 for demo.
   const docFromFees =
     fees.find((f) => /doc/i.test(f.label || ""))?.amount ?? null;
   const docFee = Number(docFromFees) || 85;
@@ -146,7 +152,6 @@ function buildCostBreakdown({ vehicle, zip }) {
   const baseWithFees = vehicle.price + feesTotal;
 
   // Very rough demo tax logic:
-  // If ZIP starts with "9" (e.g. CA-ish), use 9%, else 7%.
   const taxRate = zip.startsWith("9") ? 0.09 : 0.07;
   const tax = Math.round(baseWithFees * taxRate);
 
@@ -166,13 +171,24 @@ function buildCostBreakdown({ vehicle, zip }) {
   };
 }
 
+// --- Helper: monthly payment from principal / term ---
+function calcMonthly(principal, termMonths, apr = APR) {
+  if (!principal || principal <= 0 || !termMonths) return 0;
+  const r = apr / 12;
+  if (r === 0) return principal / termMonths;
+  const m = principal * (r / (1 - Math.pow(1 + r, -termMonths)));
+  return m;
+}
+
 export default function VehicleHome() {
   const { vin } = useParams();
   const navigate = useNavigate();
+
   const [vehicle, setVehicle] = useState(null);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+
   const [contactOpen, setContactOpen] = useState(false);
 
   const [miles, setMiles] = useState("");
@@ -181,6 +197,10 @@ export default function VehicleHome() {
   const [zip, setZip] = useState("");
   const [breakdown, setBreakdown] = useState(null);
   const [autoLocated, setAutoLocated] = useState(false);
+
+  const [term, setTerm] = useState(DEFAULT_TERM);
+  const [downPayment, setDownPayment] = useState(0);
+  const [monthly, setMonthly] = useState(0);
 
   // Load vehicle
   useEffect(() => {
@@ -212,12 +232,12 @@ export default function VehicleHome() {
 
     navigator.geolocation.getCurrentPosition(
       () => {
-        // For demo, assume a local ZIP (no external lookup).
+        // For demo, assume local ZIP; no external geocoding.
         setZip("94103");
         setAutoLocated(true);
       },
       () => {
-        // ignore errors silently for now
+        // ignore errors silently
       },
       { timeout: 2000 }
     );
@@ -230,12 +250,86 @@ export default function VehicleHome() {
     setBreakdown(next);
   }, [zip, vehicle]);
 
+  // When miles input changes, recalc shipping
   const onMilesChange = (e) => {
     const value = e.target.value.replace(/[^\d]/g, "");
     setMiles(value);
     const dist = Number(value || 0);
     setShipping(calculateShipping(dist));
   };
+
+  // Effective totals
+  const baseTotal =
+    breakdown?.total ??
+    vehicle?.totalWithFees ??
+    vehicle?.price ??
+    0;
+
+  const effectiveTotal = baseTotal + (shipping > 0 ? shipping : 0);
+
+  // Compute default down payment + monthly whenever total or term changes
+  useEffect(() => {
+    if (!effectiveTotal || effectiveTotal <= 0) return;
+
+    // Suggested = 10% of total, rounded up to nearest 1,000
+    let suggested =
+      Math.ceil((effectiveTotal * 0.1) / 1000) * 1000;
+
+    // Ensure loan >= MIN_LOAN
+    const maxAllowedDown = Math.max(
+      0,
+      effectiveTotal - MIN_LOAN
+    );
+    if (suggested > maxAllowedDown) {
+      suggested = maxAllowedDown;
+    }
+    if (suggested < 0) suggested = 0;
+
+    // If current downPayment is 0 (initial) or out of range, reset to suggested
+    setDownPayment((prev) => {
+      if (prev <= 0 || prev > maxAllowedDown) return suggested;
+      return prev;
+    });
+  }, [effectiveTotal]);
+
+  // Recalculate monthly whenever inputs change
+  useEffect(() => {
+    if (!effectiveTotal || effectiveTotal <= 0) {
+      setMonthly(0);
+      return;
+    }
+
+    const maxAllowedDown = Math.max(
+      0,
+      effectiveTotal - MIN_LOAN
+    );
+
+    let dp = Number(downPayment) || 0;
+    if (dp < 0) dp = 0;
+    if (dp > maxAllowedDown) dp = maxAllowedDown;
+
+    if (dp !== downPayment) {
+      setDownPayment(dp);
+      return; // next effect run will compute with clamped value
+    }
+
+    const principal = effectiveTotal - dp;
+    if (principal < MIN_LOAN) {
+      setMonthly(0);
+      return;
+    }
+
+    const t = TERMS.includes(Number(term))
+      ? Number(term)
+      : DEFAULT_TERM;
+    if (t !== term) {
+      setTerm(t);
+      return;
+    }
+
+    const m = calcMonthly(principal, t, APR);
+    setMonthly(Math.round(m));
+  }, [effectiveTotal, downPayment, term]);
 
   const onGetApproved = () => {
     if (!vehicle) return;
@@ -274,7 +368,8 @@ export default function VehicleHome() {
         ];
 
   const fees = vehicle.fees || [];
-  const totalWithFees = vehicle.totalWithFees || vehicle.price;
+  const totalWithFees =
+    vehicle.totalWithFees || vehicle.price;
 
   return (
     <div style={wrap}>
@@ -288,7 +383,14 @@ export default function VehicleHome() {
         <div>
           <div style={gallery}>
             <img
-              src={photos[Math.max(0, Math.min(photoIndex, photos.length - 1))]}
+              src={
+                photos[
+                  Math.max(
+                    0,
+                    Math.min(photoIndex, photos.length - 1)
+                  )
+                ]
+              }
               alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
               style={mainImg}
             />
@@ -367,6 +469,7 @@ export default function VehicleHome() {
 
         {/* RIGHT: PRICE + CTAS */}
         <aside style={priceBox}>
+          {/* Base price */}
           <div style={{ fontSize: "11px", color: "#6b7280" }}>
             Advertised price
           </div>
@@ -378,7 +481,7 @@ export default function VehicleHome() {
             included.
           </div>
 
-          {/* Customer ZIP for total-cost estimate */}
+          {/* ZIP input */}
           <div style={{ marginTop: "8px" }}>
             <div
               style={{
@@ -392,7 +495,9 @@ export default function VehicleHome() {
             <input
               value={zip}
               onChange={(e) =>
-                setZip(e.target.value.replace(/[^\d]/g, "").slice(0, 5))
+                setZip(
+                  e.target.value.replace(/[^\d]/g, "").slice(0, 5)
+                )
               }
               placeholder="e.g. 94103"
               maxLength={5}
@@ -411,6 +516,7 @@ export default function VehicleHome() {
             )}
           </div>
 
+          {/* Dealer add-ons */}
           {fees.length > 0 && (
             <div style={{ marginTop: "10px" }}>
               <div style={sectionTitle}>Detected dealer add-ons</div>
@@ -431,7 +537,7 @@ export default function VehicleHome() {
             </div>
           )}
 
-          {/* Out-the-door breakdown */}
+          {/* Out-the-door breakdown (no shipping yet) */}
           {breakdown && (
             <div style={{ marginTop: "12px" }}>
               <div style={sectionTitle}>Estimated out-the-door</div>
@@ -460,7 +566,7 @@ export default function VehicleHome() {
                 <span>${breakdown.docFee.toLocaleString()}</span>
               </div>
               <div style={totalRow}>
-                <span>Estimated total</span>
+                <span>Estimated total (no shipping)</span>
                 <span>${breakdown.total.toLocaleString()}</span>
               </div>
               <div style={{ ...subtle, marginTop: 2 }}>
@@ -469,27 +575,6 @@ export default function VehicleHome() {
               </div>
             </div>
           )}
-
-          <div style={{ marginTop: "14px" }}>
-            <span style={pill}>Transparent fees</span>
-            <span style={pill}>Online ready</span>
-            <span style={pill}>Ship to your door</span>
-          </div>
-
-          <div style={ctas}>
-            <button
-              style={primaryBtn}
-              onClick={() => setContactOpen(true)}
-            >
-              CONTACT DEALER
-            </button>
-            <button style={ghostBtn} onClick={onGetApproved}>
-              GET APPROVED
-            </button>
-            <button style={ghostBtn} onClick={onBuyOnline}>
-              BUY ONLINE (ESTIMATE)
-            </button>
-          </div>
 
           {/* Shipping estimator */}
           <div id="shipping-section" style={{ marginTop: "16px" }}>
@@ -536,15 +621,171 @@ export default function VehicleHome() {
             </div>
             {shipping > 0 && (
               <div style={{ fontSize: "11px", color: "#6b7280" }}>
-                Estimated vehicle + add-ons + shipping:
-                {" "}
-                ${ (totalWithFees + shipping).toLocaleString() }
+                Shipping is included in the total estimate below.
               </div>
             )}
           </div>
 
+          {/* Combined total incl. shipping (if any) */}
+          {effectiveTotal > 0 && (
+            <div style={{ marginTop: "14px" }}>
+              <div style={sectionTitle}>
+                Estimated total with shipping
+              </div>
+              <div style={totalRow}>
+                <span>Total (vehicle, fees, est. tax/DMV/doc, shipping)</span>
+                <span>${effectiveTotal.toLocaleString()}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Monthly payment calculator */}
+          {effectiveTotal > 0 && (
+            <div style={{ marginTop: "14px" }}>
+              <div style={sectionTitle}>
+                <span role="img" aria-label="calculator">
+                  🧮
+                </span>{" "}
+                Estimate monthly payment
+              </div>
+
+              {/* Down payment */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginTop: 4,
+                  fontSize: 11,
+                }}
+              >
+                <span style={{ width: 78 }}>Down payment</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={
+                    downPayment
+                      ? downPayment.toLocaleString()
+                      : ""
+                  }
+                  onChange={(e) => {
+                    const raw = e.target.value
+                      .replace(/[^\d]/g, "");
+                    const num = Number(raw || 0);
+                    setDownPayment(num);
+                  }}
+                  placeholder="e.g. 3,000"
+                  style={{
+                    flex: 1,
+                    padding: "6px 8px",
+                    borderRadius: 8,
+                    border: "1px solid #d1d5db",
+                    fontSize: 11,
+                  }}
+                />
+              </div>
+
+              {/* Term selector */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginTop: 6,
+                  fontSize: 11,
+                }}
+              >
+                <span style={{ width: 78 }}>Term</span>
+                <select
+                  value={term}
+                  onChange={(e) =>
+                    setTerm(Number(e.target.value))
+                  }
+                  style={{
+                    flex: 1,
+                    padding: "6px 8px",
+                    borderRadius: 8,
+                    border: "1px solid #d1d5db",
+                    fontSize: 11,
+                  }}
+                >
+                  {TERMS.map((t) => (
+                    <option key={t} value={t}>
+                      {t} months
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Monthly result */}
+              <div style={{ marginTop: 8 }}>
+                {monthly > 0 ? (
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: "#111827",
+                    }}
+                  >
+                    Approx.{" "}
+                    <span>
+                      ${monthly.toLocaleString()}
+                    </span>{" "}
+                    / month
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "#6b7280",
+                    }}
+                  >
+                    Adjust down payment and term to keep loan
+                    amount at least ${MIN_LOAN.toLocaleString()}.
+                  </div>
+                )}
+                <div
+                  style={{
+                    ...subtle,
+                    fontSize: 9,
+                    marginTop: 2,
+                  }}
+                >
+                  For illustration only. Assumes {(
+                    APR * 100
+                  ).toFixed(1)}
+                  % APR, simple interest, and average
+                  credit. Actual terms from lenders may
+                  differ.
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginTop: "14px" }}>
+            <span style={pill}>Transparent fees</span>
+            <span style={pill}>Online ready</span>
+            <span style={pill}>Ship to your door</span>
+          </div>
+
+          <div style={ctas}>
+            <button
+              style={primaryBtn}
+              onClick={() => setContactOpen(true)}
+            >
+              CONTACT DEALER
+            </button>
+            <button style={ghostBtn} onClick={onGetApproved}>
+              GET APPROVED
+            </button>
+            <button style={ghostBtn} onClick={onBuyOnline}>
+              BUY ONLINE (ESTIMATE)
+            </button>
+          </div>
+
           <div style={subtle}>
-            This is a demo marketplace using sample data for illustration only.
+            This is a demo marketplace using sample data for
+            illustration only.
           </div>
         </aside>
       </div>
